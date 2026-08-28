@@ -1,0 +1,77 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "lazybrick"
+dynamic = ["version"]
+description = "Compose, run, and benchmark reproducible model compression recipes."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [
+  { name = "LazyBrick contributors" },
+]
+keywords = [
+  "ai",
+  "compression",
+  "inference",
+  "machine-learning",
+  "quantization",
+]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Typing :: Typed",
+]
+dependencies = [
+  "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "build>=1.2.2",
+  "pytest>=8.3",
+  "twine>=5.1",
+]
+
+[project.scripts]
+lazybrick = "lazybrick.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/lazy-brick/lazybrick"
+Documentation = "https://github.com/lazy-brick/lazybrick#readme"
+Issues = "https://github.com/lazy-brick/lazybrick/issues"
+Source = "https://github.com/lazy-brick/lazybrick"
+
+[tool.hatch.version]
+path = "src/lazybrick/__about__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/lazybrick"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/IMPLEMENTATION_BLUEPRINT.md",
+  "/LICENSE",
+  "/NOTICE",
+  "/README.md",
+  "/RELEASING.md",
+  "/examples",
+  "/pyproject.toml",
+  "/src",
+  "/tests",
+]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]

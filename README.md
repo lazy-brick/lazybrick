@@ -1,0 +1,60 @@
+# LazyBrick
+
+Compose, run, and benchmark reproducible model-compression recipes.
+
+> **Pre-alpha:** `0.0.x` establishes the package, recipe envelope, and provenance
+> primitives. It does not yet execute quantization algorithms or inference.
+
+## Install
+
+```bash
+pip install lazybrick
+```
+
+## Validate a recipe
+
+```bash
+lazybrick validate examples/qwen3-awq.yaml
+```
+
+## Fingerprint a recipe
+
+```bash
+lazybrick fingerprint examples/qwen3-awq.yaml
+```
+
+```python
+from lazybrick import load_recipe
+
+recipe = load_recipe("examples/qwen3-awq.yaml")
+print(recipe.fingerprint)
+```
+
+The fingerprint is calculated from canonical recipe content, so mapping-key order
+does not change artifact identity.
+
+## Direction
+
+LazyBrick is intended to connect versioned model artifacts, external compression
+plugins, runtimes, hardware targets, and evidence through a reproducible contract.
+The design is deliberately narrow until the first complete compression workflow is
+working.
+
+See [IMPLEMENTATION_BLUEPRINT.md](IMPLEMENTATION_BLUEPRINT.md) for the proposed
+architecture, milestones, open questions, and kill criteria.
+
+## Development
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -e ".[dev]"
+pytest
+python -m build
+python -m twine check dist/*
+```
+
+## License
+
+Apache-2.0. Third-party models, datasets, runtimes, and plugin implementations keep
+their own licenses.

@@ -1,0 +1,16 @@
+schema_version: "0.1"
+
+model:
+  uri: hf://Qwen/Qwen3-8B
+  revision: replace-with-an-immutable-revision
+
+stages:
+  - id: quantize
+    plugin: lazybrick.plugin/awq
+    parameters:
+      weight_bits: 4
+      group_size: 128
+
+target:
+  runtime: vllm
+  device: cuda:0
