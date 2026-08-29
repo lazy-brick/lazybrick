@@ -121,15 +121,27 @@ artifact_id     the inputs that determine the output weights
 bit-reproducible, so two runs sharing an `artifact_id` are expected to agree
 within tolerance, never byte-for-byte.
 
-## Direction
+## Documentation
 
-LazyBrick is intended to connect versioned model artifacts, external compression
-plugins, runtimes, hardware targets, and evidence through a reproducible contract.
-The design is deliberately narrow until the first complete compression workflow is
-working.
+| Page | Covers |
+| ---- | ------ |
+| [docs/recipes.md](docs/recipes.md) | the v0.1 schema, field by field, and every reason code |
+| [docs/identities.md](docs/identities.md) | `recipe_digest` vs `plan_digest` vs `artifact_id`, and why floats are banned |
+| [docs/plugin-trust.md](docs/plugin-trust.md) | the plugin trust boundary, and what is *not* sandboxed yet |
+| [docs/licenses.md](docs/licenses.md) | third-party licensing, kept separate from LazyBrick's Apache-2.0 |
+| [docs/status.md](docs/status.md) | what has actually been measured (currently: nothing) |
+| [IMPLEMENTATION_BLUEPRINT.md](IMPLEMENTATION_BLUEPRINT.md) | the wider proposed architecture |
 
-See [IMPLEMENTATION_BLUEPRINT.md](IMPLEMENTATION_BLUEPRINT.md) for the proposed
-architecture, milestones, open questions, and kill criteria.
+## Status
+
+Pre-alpha. Planning is real: recipes are validated, references are resolved to
+immutable revisions, and incompatible plans are rejected with component-level
+reasons before anything is downloaded.
+
+Nothing is executed yet. No quantization has been run, no artifact produced, and
+no accuracy or performance number exists. See [docs/status.md](docs/status.md);
+that page is deliberately blunt about the difference between what is measured
+and what is intended.
 
 ## Development
 
@@ -142,7 +154,10 @@ python -m build
 python -m twine check dist/*
 ```
 
+The whole suite runs on CPU with no network, against recorded Hugging Face
+fixtures.
+
 ## License
 
-Apache-2.0. Third-party models, datasets, runtimes, and plugin implementations keep
-their own licenses.
+Apache-2.0. Third-party models, datasets, runtimes, and plugin implementations
+keep their own licenses -- see [docs/licenses.md](docs/licenses.md).
