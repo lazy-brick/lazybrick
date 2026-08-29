@@ -32,6 +32,14 @@ from lazybrick.records import (
     StageSpec,
     TargetSpec,
 )
+from lazybrick.resolve import (
+    ResolutionError,
+    ResolvedDataset,
+    ResolvedModel,
+    ResolvedRecipe,
+    Resolver,
+    ResolverCache,
+)
 from lazybrick.schema import (
     SCHEMA_VERSION,
     SUPPORTED_SCHEMA_VERSIONS,
@@ -58,6 +66,12 @@ __all__ = [
     "ProvenanceRecord",
     "RecipeDocument",
     "RecipeValidationError",
+    "ResolutionError",
+    "ResolvedDataset",
+    "ResolvedModel",
+    "ResolvedRecipe",
+    "Resolver",
+    "ResolverCache",
     "StageSpec",
     "TargetSpec",
     "ValidationError",
