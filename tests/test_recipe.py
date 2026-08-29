@@ -15,7 +15,7 @@ from lazybrick import (
 def valid_recipe() -> dict:
     return {
         "schema_version": "0.1",
-        "model": {"uri": "hf://Qwen/Qwen3-8B", "revision": "abc123"},
+        "model": {"uri": "hf://Qwen/Qwen3-4B", "revision": "abc123"},
         "stages": [
             {
                 "id": "quantize",

@@ -31,7 +31,12 @@ print(recipe.fingerprint)
 ```
 
 The fingerprint is calculated from canonical recipe content, so mapping-key order
-does not change artifact identity.
+does not change it.
+
+It hashes the **authored recipe only**. It is not an artifact identity and does not
+prove reproducibility. Artifact identity has to be computed from resolved immutable
+inputs -- the pinned model revision, the plugin implementation, the calibration
+data, and the export configuration -- none of which LazyBrick resolves yet.
 
 ## Direction
 
