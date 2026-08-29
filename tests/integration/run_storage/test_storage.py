@@ -91,3 +91,18 @@ def test_hash_verification_detects_mutation(tmp_path: Path) -> None:
 
     with pytest.raises(RunStorageError, match="changed"):
         verify_hashes(artifact, expected)
+
+
+def test_evidence_records_accept_finite_measured_floats(tmp_path: Path) -> None:
+    bundle = RunStore(tmp_path).begin(identity())
+
+    path = bundle.write_json("results.json", {"perplexity": 7.25})
+
+    assert json.loads(path.read_text()) == {"perplexity": 7.25}
+
+
+def test_run_records_reject_non_finite_floats(tmp_path: Path) -> None:
+    bundle = RunStore(tmp_path).begin(identity())
+
+    with pytest.raises(RunStorageError, match="finite JSON"):
+        bundle.write_json("results.json", {"perplexity": float("nan")})

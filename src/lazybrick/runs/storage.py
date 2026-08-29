@@ -46,6 +46,21 @@ def _atomic_bytes(path: Path, content: bytes) -> None:
         raise
 
 
+def _record_json(value: Mapping[str, Any]) -> bytes:
+    """Serialize run records; evidence may contain finite measured floats."""
+
+    try:
+        return json.dumps(
+            value,
+            allow_nan=False,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    except (TypeError, ValueError) as error:
+        raise RunStorageError("run record is not finite JSON") from error
+
+
 def hash_files(root: str | Path) -> dict[str, str]:
     base = Path(root)
     result: dict[str, str] = {}
@@ -86,7 +101,7 @@ class AttemptBundle:
         path = self.staging / relative_path
         if path.exists():
             raise RunStorageError(f"run record already exists: {relative_path}")
-        _atomic_bytes(path, canonical_json(value) + b"\n")
+        _atomic_bytes(path, _record_json(value) + b"\n")
         return path
 
     def write_text(self, relative_path: str, value: str) -> Path:
