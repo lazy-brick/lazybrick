@@ -13,7 +13,7 @@ from lazybrick.recipe import RecipeValidationError, load_recipe
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="lazybrick",
-        description="Validate and fingerprint model-compression recipes.",
+        description="Validate and digest model-compression recipes.",
     )
     parser.add_argument(
         "--version",
@@ -29,11 +29,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     validate.add_argument("recipe")
 
-    fingerprint = commands.add_parser(
-        "fingerprint",
-        help="Print the deterministic SHA-256 fingerprint of a recipe.",
+    digest = commands.add_parser(
+        "digest",
+        help="Print the deterministic SHA-256 digest of a recipe's authored content.",
     )
-    fingerprint.add_argument("recipe")
+    digest.add_argument("recipe")
 
     return parser
 
@@ -49,15 +49,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         recipe = load_recipe(args.recipe)
     except RecipeValidationError as error:
-        print(str(error), file=sys.stderr)
+        print("Invalid LazyBrick recipe:", file=sys.stderr)
+        for issue in error.issues:
+            print(f"  {issue}", file=sys.stderr)
         return 2
 
     if args.command == "validate":
-        print(f"Valid LazyBrick recipe: {recipe.fingerprint}")
+        print(f"Valid LazyBrick recipe (schema v{recipe.schema_version})")
+        print(f"recipe_digest: {recipe.digest}")
         return 0
 
-    if args.command == "fingerprint":
-        print(recipe.fingerprint)
+    if args.command == "digest":
+        print(recipe.digest)
         return 0
 
     parser.error(f"unknown command: {args.command}")
