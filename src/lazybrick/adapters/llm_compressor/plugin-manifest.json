@@ -3,10 +3,10 @@
   "plugin_api_version": "0.1",
   "name": "lazybrick.llm-compressor-awq",
   "package": "lazybrick",
-  "package_version": "0.0.2",
+  "package_version": "0.0.1",
   "implementation": {
     "source": "https://github.com/lazy-brick/lazybrick",
-    "commit": "0000000000000000000000000000000000000000"
+    "commit": "202cb4cd10da3eb5ab69113c358b22b0a8f5d019"
   },
   "command": ["python", "-m", "lazybrick.adapters.llm_compressor"],
   "operations": ["inspect", "plan", "execute", "validate"],
