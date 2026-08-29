@@ -211,6 +211,12 @@ class ResolvedModel:
     requires_remote_code: bool = False
     gated: bool = False
 
+    @property
+    def is_pinned(self) -> bool:
+        """True once :attr:`revision` is an immutable commit SHA."""
+
+        return is_immutable_revision(self.revision)
+
     def to_json(self) -> dict[str, Any]:
         result: dict[str, Any] = {
             "uri": self.uri,
