@@ -1,0 +1,7 @@
+{
+  "vendor": "nvidia",
+  "device_count": 1,
+  "compute_capability": "8.0",
+  "memory_gib": 40,
+  "name": "NVIDIA A100-SXM4-40GB"
+}

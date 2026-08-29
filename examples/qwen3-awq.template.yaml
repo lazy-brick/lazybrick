@@ -1,0 +1,64 @@
+# TEMPLATE -- NOT RUNNABLE AS WRITTEN.
+#
+# Every <ANGLE-BRACKETED> value is a placeholder that must be replaced before
+# this recipe can be planned or built. `lazybrick validate` will reject it,
+# which is intended: a template that validates is a template people ship by
+# accident.
+#
+# For a recipe with real pinned revisions, see qwen3-awq.yaml.
+
+schema_version: "0.1"
+
+model:
+  # hf://owner/name
+  uri: hf://<OWNER>/<MODEL>
+  # A full 40-character commit SHA. `lazybrick inspect <model>` prints the SHA
+  # a branch currently points at.
+  revision: <MODEL-COMMIT-SHA>
+  # true only if the model requires it AND you have read the repository's code.
+  trust_remote_code: false
+
+stages:
+  - id: quantize
+    plugin: lazybrick.plugin/<PLUGIN>
+    plugin_version: "<PLUGIN-VERSION>"
+    implementation:
+      # Either git + commit...
+      git: https://github.com/<OWNER>/<REPO>
+      commit: <IMPLEMENTATION-COMMIT-SHA>
+      # ...or a digest-pinned container instead:
+      # container: ghcr.io/<OWNER>/<IMAGE>@sha256:<64-HEX-DIGEST>
+    parameters:
+      weight_bits: 4
+      group_size: 128
+      ignore:
+        - lm_head
+
+calibration:
+  dataset:
+    uri: hf-dataset://<OWNER>/<DATASET>
+    revision: <DATASET-COMMIT-SHA>
+  samples: 256
+  seed: 42
+  preprocessing_id: <PREPROCESSING-ID>
+  max_sequence_length: 2048
+
+export:
+  format: compressed-tensors
+  runtime: vllm
+
+target:
+  accelerator_family: nvidia-cuda
+  # A string, never a number. See docs/identities.md on why floats are banned.
+  min_compute_capability: "8.0"
+  device_count: 1
+  min_memory_gib: <MEMORY-GIB>
+  runtime: vllm
+
+evaluation:
+  protocol_id: <PROTOCOL-ID>
+  dataset:
+    uri: hf-dataset://<OWNER>/<EVAL-DATASET>
+    revision: <EVAL-DATASET-COMMIT-SHA>
+  max_samples: 128
+  seed: 1234
