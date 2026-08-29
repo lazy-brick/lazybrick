@@ -1,0 +1,7 @@
+{
+  "vendor": "nvidia",
+  "device_count": 1,
+  "compute_capability": "8.9",
+  "memory_gib": 24,
+  "name": "NVIDIA L4"
+}

@@ -99,7 +99,11 @@ class HttpTransport:
                         code,
                         f"HTTP {error.code} fetching metadata"
                         + (
-                            "; the repository may be gated or private. Set HF_TOKEN."
+                            # The Hub answers 401 for a repository that does not
+                            # exist as well as one you cannot see, so it is not
+                            # safe to claim which of the two this is.
+                            "; the repository does not exist, or exists but is "
+                            "gated or private. If it is gated, set HF_TOKEN."
                             if error.code in (401, 403)
                             else ""
                         ),
