@@ -61,6 +61,7 @@ packages = ["src/lazybrick"]
 [tool.hatch.build.targets.sdist]
 include = [
   "/IMPLEMENTATION_BLUEPRINT.md",
+  "/docs",
   "/LICENSE",
   "/NOTICE",
   "/README.md",
