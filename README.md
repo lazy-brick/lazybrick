@@ -1,12 +1,48 @@
-# LazyBrick
+<div align="center">
 
-Compose, run, and benchmark reproducible model-compression recipes.
+# lazybrick
+
+**Compose, run, and benchmark reproducible model-compression recipes.**
+
+Pin the model revision, the plugin commit, the calibration data, and the hardware
+target. The planner resolves every reference to something immutable and rejects
+what it cannot reproduce -- before a weight is downloaded or a GPU is allocated.
+
+[![CI](https://github.com/lazy-brick/lazybrick/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/lazy-brick/lazybrick/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/lazybrick.svg?label=pypi)](https://pypi.org/project/lazybrick/)
+[![Python](https://img.shields.io/pypi/pyversions/lazybrick.svg)](https://pypi.org/project/lazybrick/)
+[![Status](https://img.shields.io/badge/status-pre--alpha-orange.svg)](docs/status.md)
+[![Measured results](https://img.shields.io/badge/measured%20results-none%20yet-lightgrey.svg)](docs/status.md)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+
+[Install](#install) &middot;
+[Quickstart](#validate-a-recipe) &middot;
+[Docs](docs/README.md) &middot;
+[Contributing](CONTRIBUTING.md) &middot;
+[Security](SECURITY.md) &middot;
+[Status](docs/status.md)
+
+</div>
 
 > **Pre-alpha:** `0.0.x` establishes the package, recipe envelope, provenance
 > primitives, and an opt-in GPU smoke workflow. The normal CLI remains
 > plan-only; no hardware result is claimed until an evidence bundle is published.
 
 ## Install
+
+For the CLI with [uv](https://docs.astral.sh/uv/):
+
+```bash
+uv tool install lazybrick
+```
+
+For a Python project managed by uv:
+
+```bash
+uv add lazybrick
+```
+
+The standard pip install remains supported:
 
 ```bash
 pip install lazybrick
@@ -128,14 +164,16 @@ within tolerance, never byte-for-byte.
 | Page | Covers |
 | ---- | ------ |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | issues, branches, pull requests, AI usage, evidence rules, and checklists |
+| [AGENTS.md](AGENTS.md) | concise repository instructions for Codex, Claude Code, and other coding agents |
 | [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | community expectations and enforcement |
 | [SECURITY.md](SECURITY.md) | private vulnerability reporting and security scope |
+| [docs/README.md](docs/README.md) | documentation index |
+| [docs/development.md](docs/development.md) | local setup with uv or pip and the verification workflow |
 | [docs/recipes.md](docs/recipes.md) | the v0.1 schema, field by field, and every reason code |
 | [docs/identities.md](docs/identities.md) | `recipe_digest` vs `plan_digest` vs `artifact_id`, and why floats are banned |
 | [docs/plugin-trust.md](docs/plugin-trust.md) | the plugin trust boundary, and what is *not* sandboxed yet |
-| [docs/licenses.md](docs/licenses.md) | third-party licensing, kept separate from LazyBrick's Apache-2.0 |
+| [docs/licenses.md](docs/licenses.md) | third-party licensing, kept separate from lazybrick's Apache-2.0 |
 | [docs/status.md](docs/status.md) | what has actually been measured (currently: nothing) |
-| [IMPLEMENTATION_BLUEPRINT.md](IMPLEMENTATION_BLUEPRINT.md) | the wider proposed architecture |
 
 ## Status
 
@@ -151,16 +189,15 @@ accuracy, latency, throughput, or memory result is claimed. See
 ## Development
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install -e ".[dev]"
-pytest
-python -m build
-python -m twine check dist/*
+uv sync --extra dev
+uv run pytest
+uv build
+uv run python -m twine check dist/*
 ```
 
 The whole suite runs on CPU with no network, against recorded Hugging Face
-fixtures.
+fixtures. See [docs/development.md](docs/development.md) for the pip fallback and
+optional integration environments.
 
 Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md); it
 covers public issue hygiene, branch naming, review expectations, and

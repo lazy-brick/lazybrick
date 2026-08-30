@@ -4,15 +4,15 @@
 
 ## Issue
 
-Closes #
+Issue: none
 
-<!-- Use "Issue: none" when a public issue was not needed. Never link a private tracker. -->
+<!-- Replace the line above with "Closes #123" when a public issue exists. Never link a private tracker. -->
 
 ## Verification
 
-- [ ] `pytest`
-- [ ] `python -m build`
-- [ ] `python -m twine check dist/*`
+- [ ] `uv run pytest`
+- [ ] `uv build`
+- [ ] `uv run python -m twine check dist/*`
 
 Commands and results:
 

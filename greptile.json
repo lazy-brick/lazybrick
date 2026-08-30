@@ -11,7 +11,7 @@
     "dependabot[bot]",
     "renovate[bot]"
   ],
-  "ignorePatterns": ".venv/**\nbuild/**\ndist/**\n**/*.egg-info/**\n.pytest_cache/**\n**/__pycache__/**\n.coverage\nhtmlcov/**\n*.pyc\n.DS_Store",
+  "ignorePatterns": ".venv/**\nbuild/**\ndist/**\n**/*.egg-info/**\n.pytest_cache/**\n**/__pycache__/**\n.coverage\nhtmlcov/**\n*.pyc\n.DS_Store\nuv.lock",
   "instructions": "Review for correctness, security, reproducibility, and drift between implementation, tests, schemas, examples, and documented claims. Prefer a small number of actionable findings backed by a concrete failure mode. Do not leave subjective style comments or restate the diff. Treat lazybrick as lowercase. Distinguish established behavior from planned or unmeasured behavior.",
   "customContext": {
     "files": [
