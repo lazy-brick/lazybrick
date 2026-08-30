@@ -10,6 +10,7 @@ import tempfile
 from typing import Any, Mapping
 
 from lazybrick.runs.identity import RunIdentity, canonical_json
+from lazybrick.runs.state import FAILURE_STATES, RunState
 
 
 class RunStorageError(RuntimeError):
@@ -136,9 +137,19 @@ class AttemptBundle:
         return destination
 
     def finalize_failure(self, state: str, failure: Mapping[str, Any]) -> Path:
-        if state == "SUCCEEDED":
-            raise RunStorageError("failure state cannot be SUCCEEDED")
-        self.write_json("status.json", {"state": state, "failure": dict(failure)})
+        try:
+            run_state = RunState(state)
+        except ValueError as error:
+            raise RunStorageError(f"unknown failure state: {state}") from error
+        if run_state not in FAILURE_STATES:
+            raise RunStorageError(f"state is not a terminal failure: {state}")
+        code = failure.get("code")
+        message = failure.get("message")
+        if not isinstance(code, str) or not code or not isinstance(message, str) or not message:
+            raise RunStorageError("failure requires non-empty code and message")
+        self.write_json(
+            "status.json", {"state": run_state.value, "failure": dict(failure)}
+        )
         return self._promote_attempt()
 
     def _require_records(self) -> None:

@@ -57,7 +57,9 @@ def test_failed_attempt_is_retained_but_never_indexed_as_artifact(tmp_path: Path
     store = RunStore(tmp_path)
     current = identity()
     bundle = store.begin(current)
-    destination = bundle.finalize_failure("BUILD_FAILED", {"code": "upstream"})
+    destination = bundle.finalize_failure(
+        "BUILD_FAILED", {"code": "upstream", "message": "build failed"}
+    )
 
     assert json.loads((destination / "status.json").read_text())["state"] == "BUILD_FAILED"
     assert not (tmp_path / "artifacts" / current.artifact_id).exists()
@@ -66,9 +68,13 @@ def test_failed_attempt_is_retained_but_never_indexed_as_artifact(tmp_path: Path
 def test_retry_never_overwrites_prior_attempt(tmp_path: Path) -> None:
     store = RunStore(tmp_path)
     first = identity()
-    first_path = store.begin(first).finalize_failure("BUILD_FAILED", {"code": "first"})
+    first_path = store.begin(first).finalize_failure(
+        "BUILD_FAILED", {"code": "first", "message": "first failure"}
+    )
     retry = first.retry()
-    retry_path = store.begin(retry).finalize_failure("CANCELLED", {"code": "second"})
+    retry_path = store.begin(retry).finalize_failure(
+        "CANCELLED", {"code": "second", "message": "second failure"}
+    )
 
     assert first_path != retry_path
     assert json.loads((first_path / "status.json").read_text())["failure"]["code"] == "first"
