@@ -1,0 +1,26 @@
+{
+  "name": "awq",
+  "plugin_api": "0.1",
+  "kind": "transformation",
+  "version": "0.1.0",
+  "implementation": {
+    "git": "https://github.com/vllm-project/llm-compressor",
+    "commit": "de46bfd53513aa87571a8b056a06aeaa5da1c69c"
+  },
+  "capabilities": {
+    "model_profile": ["dense-decoder"],
+    "component": ["language_backbone"],
+    "input_format": ["safetensors"],
+    "output_format": ["compressed-tensors"],
+    "quantization_scheme": ["W4A16"],
+    "runtime": ["vllm"],
+    "accelerator_vendor": ["nvidia"]
+  },
+  "requires": {
+    "calibration": true
+  },
+  "licenses": {
+    "plugin": "Apache-2.0",
+    "implementation": "Apache-2.0"
+  }
+}
