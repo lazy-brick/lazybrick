@@ -139,3 +139,52 @@ def resolver(hf_transport, tmp_path):
     from lazybrick.resolve import Resolver, ResolverCache
 
     return Resolver(hf_transport, ResolverCache(tmp_path / "cache"))
+
+
+# --------------------------------------------------------------------------
+# Capability fixtures
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture
+def awq_manifest():
+    """A first-party AWQ manifest: dense text backbones only, needs calibration."""
+
+    from lazybrick.records import ImplementationRef, PluginManifest
+
+    return PluginManifest(
+        name="awq",
+        plugin_api="0.1",
+        kind="transformation",
+        version="0.1.0",
+        implementation=ImplementationRef(
+            git="https://github.com/vllm-project/llm-compressor",
+            commit=PLUGIN_SHA,
+        ),
+        capabilities={
+            "model_profile": ("dense-decoder",),
+            "component": ("language_backbone",),
+            "input_format": ("safetensors",),
+            "output_format": ("compressed-tensors",),
+            "quantization_scheme": ("W4A16",),
+            "runtime": ("vllm",),
+            "accelerator_vendor": ("nvidia",),
+        },
+        requires={"calibration": True},
+        licenses={"plugin": "Apache-2.0", "implementation": "Apache-2.0"},
+    )
+
+
+@pytest.fixture
+def a100_40gb():
+    """The smallest machine the reference recipe is meant to fit on."""
+
+    from lazybrick.capabilities import HardwareProfile
+
+    return HardwareProfile(
+        vendor="nvidia",
+        device_count=1,
+        compute_capability="8.0",
+        memory_gib=40,
+        name="NVIDIA A100-SXM4-40GB",
+    )

@@ -2,6 +2,12 @@
 
 from lazybrick.__about__ import __version__
 from lazybrick.canonical import canonical_json, digest, ensure_canonical
+from lazybrick.capabilities import (
+    CompatibilityResult,
+    HardwareProfile,
+    Reason,
+    check_compatibility,
+)
 from lazybrick.errors import (
     CanonicalizationError,
     RecipeValidationError,
@@ -53,17 +59,20 @@ __all__ = [
     "CalibrationSpec",
     "CanonicalizationError",
     "CapabilityReport",
+    "CompatibilityResult",
     "DatasetRef",
     "EvalSpec",
     "EvidenceRecord",
     "ExecutionPlan",
     "ExportSpec",
     "FileRef",
+    "HardwareProfile",
     "ImplementationRef",
     "MeasurementSeries",
     "ModelRef",
     "PluginManifest",
     "ProvenanceRecord",
+    "Reason",
     "RecipeDocument",
     "RecipeValidationError",
     "ResolutionError",
@@ -78,6 +87,7 @@ __all__ = [
     "ValidationIssue",
     "__version__",
     "canonical_json",
+    "check_compatibility",
     "digest",
     "ensure_canonical",
     "is_immutable_revision",
