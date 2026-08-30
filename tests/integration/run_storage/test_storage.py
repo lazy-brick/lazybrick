@@ -1,0 +1,87 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from lazybrick.runs import RunIdentity, RunStorageError, RunStore, hash_files, verify_hashes
+
+
+def identity() -> RunIdentity:
+    return RunIdentity.create(
+        recipe_digest="a" * 64,
+        plan_digest="b" * 64,
+        artifact_id="c" * 64,
+    )
+
+
+def complete_records(bundle: object) -> None:
+    bundle.write_text("recipe.yaml", "schema_version: '0.1'\n")
+    bundle.write_json("resolved_recipe.json", {"resolved": True})
+    bundle.write_json("plan.json", {"accepted": True})
+    bundle.write_json("provenance.json", {"python": "test"})
+    bundle.write_json("results.json", {"quality": {"baseline": 1, "quantized": 1}})
+
+
+def test_success_is_atomically_promoted_and_indexed(tmp_path: Path) -> None:
+    store = RunStore(tmp_path)
+    current = identity()
+    bundle = store.begin(current)
+    complete_records(bundle)
+    (bundle.artifact_dir / "model.safetensors").write_bytes(b"weights")
+
+    destination = bundle.finalize_success({"format": "compressed-tensors/safetensors"})
+
+    assert destination.is_dir()
+    assert not bundle.staging.exists()
+    assert json.loads((destination / "status.json").read_text())["state"] == "SUCCEEDED"
+    manifest = json.loads((destination / "artifact.json").read_text())
+    verify_hashes(destination / "artifact", manifest["files"])
+    index = tmp_path / "artifacts" / current.artifact_id / f"{current.attempt_id}.json"
+    assert index.is_file()
+    assert json.loads(index.read_text())["attempt_id"] == current.attempt_id
+
+
+def test_success_requires_complete_records(tmp_path: Path) -> None:
+    bundle = RunStore(tmp_path).begin(identity())
+    (bundle.artifact_dir / "model.safetensors").write_bytes(b"weights")
+
+    with pytest.raises(RunStorageError, match="missing records"):
+        bundle.finalize_success({"format": "compressed-tensors/safetensors"})
+
+    assert bundle.staging.exists()
+
+
+def test_failed_attempt_is_retained_but_never_indexed_as_artifact(tmp_path: Path) -> None:
+    store = RunStore(tmp_path)
+    current = identity()
+    bundle = store.begin(current)
+    destination = bundle.finalize_failure("BUILD_FAILED", {"code": "upstream"})
+
+    assert json.loads((destination / "status.json").read_text())["state"] == "BUILD_FAILED"
+    assert not (tmp_path / "artifacts" / current.artifact_id).exists()
+
+
+def test_retry_never_overwrites_prior_attempt(tmp_path: Path) -> None:
+    store = RunStore(tmp_path)
+    first = identity()
+    first_path = store.begin(first).finalize_failure("BUILD_FAILED", {"code": "first"})
+    retry = first.retry()
+    retry_path = store.begin(retry).finalize_failure("CANCELLED", {"code": "second"})
+
+    assert first_path != retry_path
+    assert json.loads((first_path / "status.json").read_text())["failure"]["code"] == "first"
+    assert json.loads((retry_path / "status.json").read_text())["failure"]["code"] == "second"
+
+
+def test_hash_verification_detects_mutation(tmp_path: Path) -> None:
+    artifact = tmp_path / "artifact"
+    artifact.mkdir()
+    weight = artifact / "model.safetensors"
+    weight.write_bytes(b"first")
+    expected = hash_files(artifact)
+    weight.write_bytes(b"second")
+
+    with pytest.raises(RunStorageError, match="changed"):
+        verify_hashes(artifact, expected)
