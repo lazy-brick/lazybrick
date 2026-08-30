@@ -22,7 +22,7 @@ somebody ships by accident.
 `examples/qwen3-awq.yaml` pins the model and the plugin implementation to real
 commits, but its calibration and evaluation datasets are placeholders, so
 `lazybrick plan` refuses it. That is not an oversight -- see
-[licenses.md](licenses.md#the-calibration-dataset-is-undecided).
+[licenses.md](licenses.md#calibration-dataset-decision).
 
 ## Fields
 

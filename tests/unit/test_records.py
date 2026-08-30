@@ -205,6 +205,43 @@ class TestPinning:
         assert ref.is_pinned is pinned
 
 
+class TestUntrustedRecordInput:
+    def test_string_false_is_not_coerced_to_true(self) -> None:
+        with pytest.raises(Exception, match="must be a boolean"):
+            ModelRef.from_json(
+                {
+                    "uri": "hf://Qwen/Qwen3-4B",
+                    "revision": MODEL_SHA,
+                    "trust_remote_code": "false",
+                }
+            )
+
+    def test_plugin_requires_are_booleans(self) -> None:
+        payload = {
+            "name": "awq",
+            "plugin_api": "0.1",
+            "kind": "transformation",
+            "version": "0.1.0",
+            "implementation": {"git": "https://example.invalid/x", "commit": PLUGIN_SHA},
+            "capabilities": {"runtime": ["vllm"]},
+            "requires": {"calibration": "false"},
+            "licenses": {},
+        }
+
+        with pytest.raises(Exception, match="values must be booleans"):
+            PluginManifest.from_json(payload)
+
+    def test_implementation_cannot_mix_git_and_container_pins(self) -> None:
+        with pytest.raises(Exception, match="exactly one"):
+            ImplementationRef.from_json(
+                {
+                    "git": "https://example.invalid/x",
+                    "commit": PLUGIN_SHA,
+                    "container": "x@sha256:" + "a" * 64,
+                }
+            )
+
+
 def test_artifact_manifest_round_trips() -> None:
     manifest = ArtifactManifest(
         artifact_id="a" * 64,

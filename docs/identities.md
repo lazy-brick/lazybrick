@@ -80,3 +80,7 @@ Measurements really are fractional, so `EvidenceRecord` carries scores and
 latency samples as **decimal strings**. The printed form is the measurement:
 `8.42` and `8.4200000000001` are different claims and a float round-trip must
 not be allowed to blur them.
+
+Raw, non-identity run logs may contain finite JSON numbers for direct analysis.
+They are not canonical identity inputs; a value promoted into a digested public
+record must use the decimal-string contract above.

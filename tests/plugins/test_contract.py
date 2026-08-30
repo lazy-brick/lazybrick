@@ -128,6 +128,17 @@ def test_manifest_requires_immutable_implementation() -> None:
     assert caught.value.failure.code == "mutable_plugin_implementation"
 
 
+def test_manifest_rejects_abbreviated_git_commit() -> None:
+    value = manifest_dict(
+        implementation={"source": "https://example.invalid/plugin", "commit": "de46bfd"}
+    )
+
+    with pytest.raises(PluginError, match="full lowercase 40-character") as caught:
+        PluginManifest.from_dict(value)
+
+    assert caught.value.failure.code == "mutable_plugin_implementation"
+
+
 def test_discovery_does_not_import_plugin_code(tmp_path: Path) -> None:
     plugin_dir = tmp_path / "fake"
     plugin_dir.mkdir()

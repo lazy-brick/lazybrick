@@ -73,7 +73,7 @@ class TestValidateAndDigest:
         assert len(capsys.readouterr().out.strip()) == 64
 
     def test_no_command_prints_help(self, capsys) -> None:
-        assert run() == OK
+        assert run() == REFUSED
         assert "usage: lazybrick" in capsys.readouterr().out
 
 

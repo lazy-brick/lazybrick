@@ -91,3 +91,51 @@ def test_hash_verification_detects_mutation(tmp_path: Path) -> None:
 
     with pytest.raises(RunStorageError, match="changed"):
         verify_hashes(artifact, expected)
+
+
+def test_evidence_records_accept_finite_measured_floats(tmp_path: Path) -> None:
+    bundle = RunStore(tmp_path).begin(identity())
+
+    path = bundle.write_json("results.json", {"perplexity": 7.25})
+
+    assert json.loads(path.read_text()) == {"perplexity": 7.25}
+
+
+def test_run_records_reject_non_finite_floats(tmp_path: Path) -> None:
+    bundle = RunStore(tmp_path).begin(identity())
+
+    with pytest.raises(RunStorageError, match="finite JSON"):
+        bundle.write_json("results.json", {"perplexity": float("nan")})
+
+
+@pytest.mark.parametrize("path", ["../outside.json", "/tmp/outside.json", "a/../../outside.json"])
+def test_record_paths_cannot_escape_the_attempt(tmp_path: Path, path: str) -> None:
+    bundle = RunStore(tmp_path).begin(identity())
+
+    with pytest.raises(RunStorageError, match="inside the attempt bundle"):
+        bundle.write_json(path, {"unsafe": True})
+
+
+def test_unsafe_run_identifier_is_rejected(tmp_path: Path) -> None:
+    current = identity()
+    unsafe = RunIdentity(
+        run_id="../outside",
+        attempt_id=current.attempt_id,
+        recipe_digest=current.recipe_digest,
+        plan_digest=current.plan_digest,
+        artifact_id=current.artifact_id,
+    )
+
+    with pytest.raises(RunStorageError, match="run_id"):
+        RunStore(tmp_path).begin(unsafe)
+
+
+def test_artifact_symlinks_are_rejected(tmp_path: Path) -> None:
+    outside = tmp_path / "outside.bin"
+    outside.write_bytes(b"secret")
+    artifact = tmp_path / "artifact"
+    artifact.mkdir()
+    (artifact / "linked.bin").symlink_to(outside)
+
+    with pytest.raises(RunStorageError, match="symlinks"):
+        hash_files(artifact)

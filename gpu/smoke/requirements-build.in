@@ -1,0 +1,4 @@
+PyYAML==6.0.3
+datasets==4.8.4
+llmcompressor==0.13.0
+psutil==7.1.0
