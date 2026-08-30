@@ -4,14 +4,18 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from hashlib import sha256
 import json
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from lazybrick.errors import RecipeValidationError, ValidationIssue
+from lazybrick.canonical import digest as canonical_digest
+from lazybrick.errors import (
+    CanonicalizationError,
+    RecipeValidationError,
+    ValidationIssue,
+)
 from lazybrick.schema import SCHEMA_VERSION, validate_document
 
 __all__ = [
@@ -58,23 +62,10 @@ def recipe_digest(recipe: Mapping[str, Any]) -> str:
 
     validate_recipe(recipe)
     try:
-        canonical = json.dumps(
-            recipe,
-            ensure_ascii=False,
-            separators=(",", ":"),
-            sort_keys=True,
-        ).encode("utf-8")
-    except (TypeError, ValueError) as error:
-        raise RecipeValidationError(
-            [
-                ValidationIssue(
-                    "",
-                    "not_serializable",
-                    "recipe values must be JSON-compatible for deterministic hashing",
-                )
-            ]
-        ) from error
-    return sha256(canonical).hexdigest()
+        return canonical_digest(recipe)
+    except CanonicalizationError as error:
+        # Re-raised as a recipe error so callers handle one exception type.
+        raise RecipeValidationError(error.issues) from error
 
 
 def load_recipe(path: str | Path) -> RecipeDocument:

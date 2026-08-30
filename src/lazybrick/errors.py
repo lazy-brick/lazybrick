@@ -27,8 +27,11 @@ class ValidationIssue:
         return {"path": self.path, "code": self.code, "message": self.message}
 
 
-class RecipeValidationError(ValueError):
-    """Raised when a recipe does not satisfy the versioned schema."""
+class ValidationError(ValueError):
+    """Base for every rejection that carries field-level issues."""
+
+    #: Prefixes the joined issue list in ``str(error)``.
+    summary = "Validation failed"
 
     def __init__(self, issues: Iterable[ValidationIssue | str]) -> None:
         normalized: list[ValidationIssue] = []
@@ -40,8 +43,7 @@ class RecipeValidationError(ValueError):
 
         self.issues: tuple[ValidationIssue, ...] = tuple(normalized)
         super().__init__(
-            "Invalid LazyBrick recipe: "
-            + "; ".join(str(issue) for issue in self.issues)
+            f"{self.summary}: " + "; ".join(str(issue) for issue in self.issues)
         )
 
     @property
@@ -56,6 +58,23 @@ class RecipeValidationError(ValueError):
 
     def to_json(self) -> list[dict[str, str]]:
         return [issue.to_json() for issue in self.issues]
+
+
+class RecipeValidationError(ValidationError):
+    """Raised when a recipe does not satisfy the versioned schema."""
+
+    summary = "Invalid LazyBrick recipe"
+
+
+class CanonicalizationError(ValidationError):
+    """Raised when a value cannot be canonically serialized.
+
+    The common cause is a floating-point number. LazyBrick refuses them on
+    purpose: 128 and 128.0 are the same number but not the same bytes, and a
+    digest that depends on which one an author typed is not an identity.
+    """
+
+    summary = "Cannot canonicalize value"
 
 
 class _IssueCollector:
