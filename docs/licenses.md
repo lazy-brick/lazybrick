@@ -29,24 +29,19 @@ string is not legal advice.
 | --------- | ------- | -------- |
 | PyYAML | MIT | reading YAML recipes |
 | Qwen3 models | Apache-2.0 | the reference and smoke models |
-| vLLM LLM Compressor | Apache-2.0 | the AWQ implementation (not yet integrated) |
-| vLLM | Apache-2.0 | the target runtime (not yet integrated) |
+| vLLM LLM Compressor | Apache-2.0 | the isolated AWQ adapter and smoke workflow |
+| vLLM | Apache-2.0 | the isolated smoke-workflow validator |
+| HuggingFaceH4/ultrachat_200k | MIT (dataset metadata) | pinned smoke calibration and evaluation input |
 
-The last two are listed because recipes reference them, not because LazyBrick
-ships or executes them today.
+These dependencies are optional and do not ship in the dependency-light core.
 
-## The calibration dataset is undecided
+## Calibration dataset decision
 
-No calibration dataset has been chosen. This is a **blocking decision**, not an
-oversight: the dataset must permit calibration use, redistribution of the
-derived artifact, and publication of the resulting evidence, and its licence has
-to be compatible with distributing that evidence alongside Apache-2.0 code.
+The smoke workflow pins `HuggingFaceH4/ultrachat_200k` at commit
+`8049631c405ae6576f93f445c6b8166f76f5505a`; its Hub metadata reports MIT. This
+is a recorded project input, not a legal conclusion that every resulting model
+artifact may be redistributed. Model terms, dataset content rights, and the
+intended use still need an independent review before publication.
 
-Until it is settled:
-
-- `examples/qwen3-awq.yaml` carries a placeholder dataset URI and will not plan
-- the test fixture for a dataset is hand-written and labelled synthetic, so that
-  no fixture implies a choice that has not been made
-
-If no clearly compatible dataset is found, the correct outcome is to stop and
-escalate, not to substitute one whose terms are unclear.
+The generic example continues to use synthetic fixture metadata; the concrete
+dataset pin is limited to the opt-in smoke workflow.

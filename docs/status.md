@@ -28,14 +28,17 @@ These are real, tested, and run on CPU with no network:
   `Qwen/Qwen3-30B-A3B`
 - component-level compatibility rejection for multimodal and MoE architectures
 - `inspect`, `plan`, and `build --dry-run`
+- the subprocess plugin contract, pinned calibration selection, immutable run
+  bundles, evidence calculations, and the GPU smoke workflow's fail-closed
+  orchestration, all with CPU-only tests
 
 `lazybrick inspect Qwen/Qwen3-4B` has also been run against the live Hub API and
 returns the pinned SHA, dtype, parameter count, and licence shown in the README.
 
 ## Not yet true
 
-- no AWQ transformation has been run
-- no artifact has been loaded by vLLM
+- the AWQ and vLLM integration code exists, but no completed GPU evidence bundle
+  has been published
 - `RUNTIME_CAPABILITIES` in `capabilities.py` states what LazyBrick *believes*
   vLLM can load. Those entries are claims awaiting a real load, and the list is
   kept narrow for that reason

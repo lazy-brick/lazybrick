@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+import re
 from typing import Any
 
 from lazybrick.canonical import digest
@@ -47,6 +48,9 @@ __all__ = [
 
 PLAN_VERSION = "0.1"
 
+_COMMIT_SHA = re.compile(r"\A[0-9a-f]{40}\Z")
+_CONTAINER_DIGEST = re.compile(r"\A[^\s@]+@sha256:[0-9a-f]{64}\Z")
+
 
 def _require(data: Mapping[str, Any], field_name: str, path: str) -> Any:
     if field_name not in data:
@@ -68,6 +72,36 @@ def _tuple(values: object) -> tuple[Any, ...]:
     if isinstance(values, (str, bytes)) or not isinstance(values, Sequence):
         return (values,)
     return tuple(values)
+
+
+def _mapping(value: object, path: str) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping):
+        raise RecipeValidationError(
+            [ValidationIssue(path, "invalid_type", "must be an object")]
+        )
+    return value
+
+
+def _reject_unknown(data: Mapping[str, Any], allowed: set[str], path: str) -> None:
+    unknown = sorted(str(key) for key in data if key not in allowed)
+    if unknown:
+        raise RecipeValidationError(
+            [
+                ValidationIssue(
+                    path,
+                    "unknown_field",
+                    "unknown fields: " + ", ".join(unknown),
+                )
+            ]
+        )
+
+
+def _text(value: object, path: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise RecipeValidationError(
+            [ValidationIssue(path, "invalid_type", "must be a non-empty string")]
+        )
+    return value
 
 
 # --------------------------------------------------------------------------
@@ -96,10 +130,23 @@ class ModelRef:
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any], path: str = "model") -> ModelRef:
+        data = _mapping(data, path)
+        _reject_unknown(data, {"uri", "revision", "trust_remote_code"}, path)
+        trust_remote_code = data.get("trust_remote_code", False)
+        if not isinstance(trust_remote_code, bool):
+            raise RecipeValidationError(
+                [
+                    ValidationIssue(
+                        f"{path}.trust_remote_code",
+                        "invalid_type",
+                        "must be a boolean",
+                    )
+                ]
+            )
         return cls(
-            uri=_require(data, "uri", path),
-            revision=_require(data, "revision", path),
-            trust_remote_code=bool(data.get("trust_remote_code", False)),
+            uri=_text(_require(data, "uri", path), f"{path}.uri"),
+            revision=_text(_require(data, "revision", path), f"{path}.revision"),
+            trust_remote_code=trust_remote_code,
         )
 
 
@@ -141,8 +188,8 @@ class ImplementationRef:
     @property
     def is_pinned(self) -> bool:
         if self.container is not None:
-            return "@sha256:" in self.container
-        return is_immutable_revision(self.commit)
+            return bool(_CONTAINER_DIGEST.fullmatch(self.container))
+        return bool(self.commit and _COMMIT_SHA.fullmatch(self.commit))
 
     def to_json(self) -> dict[str, Any]:
         result: dict[str, Any] = {}
@@ -158,14 +205,29 @@ class ImplementationRef:
     def from_json(
         cls, data: Mapping[str, Any], path: str = "implementation"
     ) -> ImplementationRef:
+        data = _mapping(data, path)
         if not data:
             raise RecipeValidationError(
                 [ValidationIssue(path, "missing_field", "implementation is empty")]
             )
+        _reject_unknown(data, {"git", "commit", "container"}, path)
+        has_git = "git" in data or "commit" in data
+        has_container = "container" in data
+        if has_git == has_container:
+            raise RecipeValidationError(
+                [
+                    ValidationIssue(
+                        path,
+                        "invalid_value",
+                        "must use exactly one of git plus commit, or container",
+                    )
+                ]
+            )
+        if has_container:
+            return cls(container=_text(data.get("container"), f"{path}.container"))
         return cls(
-            git=data.get("git"),
-            commit=data.get("commit"),
-            container=data.get("container"),
+            git=_text(data.get("git"), f"{path}.git"),
+            commit=_text(data.get("commit"), f"{path}.commit"),
         )
 
 
@@ -345,20 +407,49 @@ class PluginManifest:
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any], path: str = "plugin") -> PluginManifest:
+        data = _mapping(data, path)
+        _reject_unknown(
+            data,
+            {
+                "name", "plugin_api", "kind", "version", "implementation",
+                "capabilities", "requires", "licenses",
+            },
+            path,
+        )
+        capabilities = _mapping(data.get("capabilities", {}), f"{path}.capabilities")
+        parsed_capabilities: dict[str, tuple[str, ...]] = {}
+        for key, value in capabilities.items():
+            if not isinstance(key, str) or isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
+                raise RecipeValidationError(
+                    [ValidationIssue(f"{path}.capabilities", "invalid_type", "values must be string arrays")]
+                )
+            items = tuple(value)
+            if not items or any(not isinstance(item, str) or not item for item in items):
+                raise RecipeValidationError(
+                    [ValidationIssue(f"{path}.capabilities.{key}", "invalid_type", "must be a non-empty string array")]
+                )
+            parsed_capabilities[key] = items
+        requires = _mapping(data.get("requires", {}), f"{path}.requires")
+        if any(not isinstance(key, str) or not isinstance(value, bool) for key, value in requires.items()):
+            raise RecipeValidationError(
+                [ValidationIssue(f"{path}.requires", "invalid_type", "values must be booleans")]
+            )
+        licenses = _mapping(data.get("licenses", {}), f"{path}.licenses")
+        if any(not isinstance(key, str) or not isinstance(value, str) for key, value in licenses.items()):
+            raise RecipeValidationError(
+                [ValidationIssue(f"{path}.licenses", "invalid_type", "values must be strings")]
+            )
         return cls(
-            name=_require(data, "name", path),
-            plugin_api=_require(data, "plugin_api", path),
-            kind=_require(data, "kind", path),
-            version=_require(data, "version", path),
+            name=_text(_require(data, "name", path), f"{path}.name"),
+            plugin_api=_text(_require(data, "plugin_api", path), f"{path}.plugin_api"),
+            kind=_text(_require(data, "kind", path), f"{path}.kind"),
+            version=_text(_require(data, "version", path), f"{path}.version"),
             implementation=ImplementationRef.from_json(
                 _require(data, "implementation", path), f"{path}.implementation"
             ),
-            capabilities={
-                key: _tuple(value)
-                for key, value in (data.get("capabilities") or {}).items()
-            },
-            requires={k: bool(v) for k, v in (data.get("requires") or {}).items()},
-            licenses=dict(data.get("licenses") or {}),
+            capabilities=parsed_capabilities,
+            requires=dict(requires),
+            licenses=dict(licenses),
         )
 
 

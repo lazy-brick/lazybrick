@@ -139,7 +139,7 @@ class TestRecipeRejections:
         result = check(recipe=valid_recipe)
 
         assert "unsupported_runtime" in result.codes
-        assert "vllm" in result.reasons[0].detail
+        assert any("vllm" in reason.available for reason in result.reasons)
 
     def test_export_and_target_runtime_must_agree(self, check, valid_recipe) -> None:
         valid_recipe["target"]["runtime"] = "sglang"
@@ -174,6 +174,29 @@ class TestRecipeRejections:
         result = check(recipe=valid_recipe)
 
         assert "unknown_plugin" in result.codes
+
+    def test_manifest_version_must_match_stage(self, check, awq_manifest) -> None:
+        result = check(manifest=replace(awq_manifest, version="9.9.9"))
+
+        assert "plugin_version_mismatch" in result.codes
+
+    def test_manifest_implementation_must_match_stage(
+        self, check, awq_manifest
+    ) -> None:
+        other = replace(
+            awq_manifest,
+            implementation=replace(awq_manifest.implementation, commit="f" * 40),
+        )
+
+        assert "plugin_implementation_mismatch" in check(manifest=other).codes
+
+    def test_plugin_input_format_is_checked(self, check, awq_manifest) -> None:
+        capabilities = dict(awq_manifest.capabilities)
+        capabilities["input_format"] = ("pytorch",)
+
+        result = check(manifest=replace(awq_manifest, capabilities=capabilities))
+
+        assert "unsupported_input_format" in result.codes
 
     def test_mutable_model_revision(
         self, resolver, recorded_models, valid_recipe, awq_manifest, a100_40gb

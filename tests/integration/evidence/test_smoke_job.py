@@ -74,7 +74,15 @@ def test_bundle_verifier_requires_success_and_raw_evidence(tmp_path: Path) -> No
     bundle = store.begin(identity)
     bundle.write_text("recipe.yaml", "schema_version: '0.1'\n")
     bundle.write_json("resolved_recipe.json", {"resolved": True})
-    bundle.write_json("plan.json", {"accepted": True})
+    bundle.write_json(
+        "plan.json",
+        {
+            "accepted": True,
+            "recipe_digest": identity.recipe_digest,
+            "plan_digest": identity.plan_digest,
+            "artifact_id": identity.artifact_id,
+        },
+    )
     bundle.write_json("provenance.json", {"python": "test"})
     bundle.write_json(
         "results.json",

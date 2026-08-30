@@ -224,6 +224,13 @@ def _implementation(issues: _IssueCollector, path: str, impl: Mapping[str, Any])
         )
         return
 
+    if has_git and has_container:
+        issues.add(
+            path,
+            "invalid_value",
+            "must use exactly one implementation pin form, not both git and container",
+        )
+
     if has_git:
         _text_field(issues, path, impl, "git")
         commit = _text_field(issues, path, impl, "commit")

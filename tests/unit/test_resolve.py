@@ -137,6 +137,16 @@ class TestClassification:
 
 
 class TestCache:
+    def test_online_mutable_revision_is_refreshed(self, hf_transport, tmp_path):
+        cache = ResolverCache(tmp_path / "c")
+        resolver = Resolver(hf_transport, cache)
+        resolver.resolve_model(model(revision="main"))
+        before = len(hf_transport.requested)
+
+        resolver.resolve_model(model(revision="main"))
+
+        assert len(hf_transport.requested) > before
+
     def test_second_resolution_hits_the_cache(self, hf_transport, tmp_path):
         cache = ResolverCache(tmp_path / "c")
         first = Resolver(hf_transport, cache).resolve_model(model())

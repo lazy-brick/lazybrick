@@ -14,7 +14,7 @@ from lazybrick.plugins.errors import PluginError, PluginFailure
 PLUGIN_API_VERSION = "0.1"
 PLUGIN_MANIFEST_VERSION = "0.1"
 SUPPORTED_OPERATIONS = frozenset({"inspect", "plan", "execute", "validate"})
-_COMMIT_RE = re.compile(r"^[0-9a-fA-F]{7,64}$")
+_COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 _DIGEST_RE = re.compile(r"^sha256:[0-9a-fA-F]{64}$")
 
 
@@ -54,7 +54,7 @@ class ImplementationRef:
         ):
             raise _fail(
                 "mutable_plugin_implementation",
-                "implementation.commit must be a hexadecimal Git commit",
+                "implementation.commit must be a full lowercase 40-character Git commit",
             )
         if digest is not None and (
             not isinstance(digest, str) or _DIGEST_RE.fullmatch(digest) is None

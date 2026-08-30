@@ -163,11 +163,24 @@ class HardwareProfile:
 
     @classmethod
     def from_json(cls, data: Mapping[str, Any]) -> HardwareProfile:
+        allowed = {"vendor", "device_count", "compute_capability", "memory_gib", "name"}
+        unknown = sorted(str(key) for key in data if key not in allowed)
+        if unknown:
+            raise ValueError("hardware profile contains unknown fields: " + ", ".join(unknown))
+        for field_name in ("vendor", "compute_capability"):
+            if not isinstance(data.get(field_name), str) or not data[field_name].strip():
+                raise ValueError(f"hardware profile {field_name} must be a non-empty string")
+        for field_name in ("device_count", "memory_gib"):
+            value = data.get(field_name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"hardware profile {field_name} must be a non-negative integer")
+        if data.get("name") is not None and not isinstance(data["name"], str):
+            raise ValueError("hardware profile name must be a string")
         return cls(
             vendor=data["vendor"],
-            device_count=int(data["device_count"]),
-            compute_capability=str(data["compute_capability"]),
-            memory_gib=int(data["memory_gib"]),
+            device_count=data["device_count"],
+            compute_capability=data["compute_capability"],
+            memory_gib=data["memory_gib"],
             name=data.get("name"),
         )
 
@@ -290,11 +303,24 @@ def check_compatibility(
     immediately.
     """
 
+    rejections = _Rejections()
     if not isinstance(plugins, Mapping):
-        plugins = {manifest.name: manifest for manifest in plugins}
+        manifests = tuple(plugins)
+        duplicate_names = sorted(
+            name for name in {item.name for item in manifests}
+            if sum(item.name == name for item in manifests) > 1
+        )
+        for name in duplicate_names:
+            rejections.add(
+                Reason(
+                    code="duplicate_plugin_manifest",
+                    subject=f"plugin:{name}",
+                    detail=f"more than one manifest declares plugin {name!r}",
+                )
+            )
+        plugins = {manifest.name: manifest for manifest in manifests}
     hardware = hardware if hardware is not None else HardwareProfile.none()
 
-    rejections = _Rejections()
     reports = [model_report(model), hardware_report(hardware)]
 
     # -- references must be immutable before anything else matters ----------
@@ -348,6 +374,61 @@ def check_compatibility(
         reports.append(report)
         subject = report.subject
 
+        if manifest.name not in {stage.plugin, plugin_name}:
+            rejections.add(
+                Reason(
+                    code="plugin_identity_mismatch",
+                    subject=f"stages[{index}]",
+                    detail=(
+                        f"stage requests {stage.plugin!r}, but the selected manifest "
+                        f"declares {manifest.name!r}"
+                    ),
+                )
+            )
+        if manifest.plugin_api != "0.1":
+            rejections.add(
+                Reason(
+                    code="incompatible_plugin_api",
+                    subject=subject,
+                    detail=f"plugin API {manifest.plugin_api!r} is unsupported; expected '0.1'",
+                )
+            )
+        if manifest.kind != "transformation":
+            rejections.add(
+                Reason(
+                    code="plugin_kind_mismatch",
+                    subject=subject,
+                    detail=f"stage requires a transformation plugin, got {manifest.kind!r}",
+                )
+            )
+        if manifest.version != stage.plugin_version:
+            rejections.add(
+                Reason(
+                    code="plugin_version_mismatch",
+                    subject=subject,
+                    detail=(
+                        f"stage pins version {stage.plugin_version!r}, but the manifest "
+                        f"declares {manifest.version!r}"
+                    ),
+                )
+            )
+        if manifest.implementation.to_json() != stage.implementation.to_json():
+            rejections.add(
+                Reason(
+                    code="plugin_implementation_mismatch",
+                    subject=subject,
+                    detail="stage and manifest do not pin the same implementation",
+                )
+            )
+        if not manifest.implementation.is_pinned:
+            rejections.add(
+                Reason(
+                    code="mutable_plugin_implementation",
+                    subject=subject,
+                    detail="plugin manifest implementation is not pinned immutably",
+                )
+            )
+
         rejections.intersect(
             code="unsupported_model_profile",
             subject=subject,
@@ -358,6 +439,15 @@ def check_compatibility(
                 f"{manifest.name} does not support the {model.model_profile} "
                 f"profile that {model.repo_id} resolves to"
             ),
+        )
+
+        rejections.intersect(
+            code="unsupported_input_format",
+            subject=subject,
+            capability="input_format",
+            required=(model.weight_format,),
+            available=report.get("input_format"),
+            detail=f"{manifest.name} cannot consume {model.weight_format!r} weights",
         )
 
         # Component-level, so the rejection names the part that has no path.
@@ -400,6 +490,40 @@ def check_compatibility(
                 f"{manifest.name} cannot export {plan.export.format!r}"
             ),
         )
+
+        rejections.intersect(
+            code="unsupported_runtime",
+            subject=subject,
+            capability="runtime",
+            required=(plan.export.runtime,),
+            available=report.get("runtime"),
+            detail=f"{manifest.name} does not declare support for {plan.export.runtime!r}",
+        )
+
+        wanted_vendor = _VENDORS.get(
+            plan.target.accelerator_family, plan.target.accelerator_family
+        )
+        rejections.intersect(
+            code="accelerator_vendor_mismatch",
+            subject=subject,
+            capability="accelerator_vendor",
+            required=(wanted_vendor,),
+            available=report.get("accelerator_vendor"),
+            detail=f"{manifest.name} does not support {wanted_vendor} accelerators",
+        )
+        declared_compute = report.get("compute_capability")
+        if declared_compute:
+            rejections.intersect(
+                code="unsupported_compute_capability",
+                subject=subject,
+                capability="compute_capability",
+                required=(hardware.compute_capability,),
+                available=declared_compute,
+                detail=(
+                    f"{manifest.name} has no declared path for compute capability "
+                    f"{hardware.compute_capability}"
+                ),
+            )
 
         if manifest.requires.get("calibration") and plan.calibration is None:
             rejections.add(
@@ -450,6 +574,25 @@ def check_compatibility(
             required=(model.model_profile,),
             available=runtime_capabilities.get("model_profile"),
             detail=f"{runtime} does not serve {model.model_profile} models",
+        )
+        rejections.intersect(
+            code="unsupported_quantization_scheme",
+            subject=runtime_capabilities.subject,
+            capability="quantization_scheme",
+            required=tuple(scheme_for_stage(stage) for stage in plan.stages),
+            available=runtime_capabilities.get("quantization_scheme"),
+            detail=f"{runtime} cannot load one or more requested quantization schemes",
+        )
+        wanted_vendor = _VENDORS.get(
+            plan.target.accelerator_family, plan.target.accelerator_family
+        )
+        rejections.intersect(
+            code="accelerator_vendor_mismatch",
+            subject=runtime_capabilities.subject,
+            capability="accelerator_vendor",
+            required=(wanted_vendor,),
+            available=runtime_capabilities.get("accelerator_vendor"),
+            detail=f"{runtime} is not declared for {wanted_vendor} accelerators",
         )
 
     if plan.target.runtime != runtime:
