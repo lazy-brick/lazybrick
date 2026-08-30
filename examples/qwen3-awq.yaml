@@ -1,16 +1,55 @@
+# LazyBrick recipe, schema v0.1.
+#
+# The model and the plugin implementation are pinned to real immutable commits.
+# The calibration dataset is NOT: choosing a licence-compatible calibration set
+# is still an open blocking decision, so its URI is a placeholder and `lazybrick
+# plan` will refuse this recipe until it is replaced.
+
 schema_version: "0.1"
 
 model:
   uri: hf://Qwen/Qwen3-4B
-  revision: replace-with-an-immutable-revision
+  revision: 1cfa9a7208912126459214e8b04321603b3df60c
+  trust_remote_code: false
 
 stages:
   - id: quantize
     plugin: lazybrick.plugin/awq
+    plugin_version: "0.1.0"
+    implementation:
+      git: https://github.com/vllm-project/llm-compressor
+      commit: de46bfd53513aa87571a8b056a06aeaa5da1c69c
     parameters:
       weight_bits: 4
       group_size: 128
+      ignore:
+        - lm_head
+
+calibration:
+  dataset:
+    uri: hf-dataset://REPLACE-ME/calibration-set
+    revision: REPLACE-ME
+  samples: 256
+  seed: 42
+  preprocessing_id: qwen3-chat-template-v1
+  max_sequence_length: 2048
+
+export:
+  format: compressed-tensors
+  runtime: vllm
 
 target:
+  accelerator_family: nvidia-cuda
+  # A string, not a number: 8.0 and 8.00 must not collapse to the same value.
+  min_compute_capability: "8.0"
+  device_count: 1
+  min_memory_gib: 40
   runtime: vllm
-  device: cuda:0
+
+evaluation:
+  protocol_id: token-loss-v1
+  dataset:
+    uri: hf-dataset://REPLACE-ME/held-out-set
+    revision: REPLACE-ME
+  max_samples: 128
+  seed: 1234
