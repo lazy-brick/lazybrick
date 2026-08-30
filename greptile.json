@@ -1,0 +1,157 @@
+{
+  "strictness": 2,
+  "commentTypes": [
+    "logic",
+    "syntax",
+    "info"
+  ],
+  "triggerOnUpdates": false,
+  "triggerOnDrafts": false,
+  "excludeAuthors": [
+    "dependabot[bot]",
+    "renovate[bot]"
+  ],
+  "ignorePatterns": ".venv/**\nbuild/**\ndist/**\n**/*.egg-info/**\n.pytest_cache/**\n**/__pycache__/**\n.coverage\nhtmlcov/**\n*.pyc\n.DS_Store",
+  "instructions": "Review for correctness, security, reproducibility, and drift between implementation, tests, schemas, examples, and documented claims. Prefer a small number of actionable findings backed by a concrete failure mode. Do not leave subjective style comments or restate the diff. Treat lazybrick as lowercase. Distinguish established behavior from planned or unmeasured behavior.",
+  "customContext": {
+    "files": [
+      {
+        "path": "CONTRIBUTING.md",
+        "description": "Repository-wide engineering, testing, evidence, security, licensing, and review contracts"
+      },
+      {
+        "path": "docs/recipes.md",
+        "description": "Versioned recipe schema and stable validation reason codes",
+        "scope": [
+          "src/lazybrick/recipe.py",
+          "src/lazybrick/schema.py",
+          "tests/**/*recipe*",
+          "tests/**/*schema*",
+          "examples/**/*.yaml"
+        ]
+      },
+      {
+        "path": "docs/identities.md",
+        "description": "Identity boundaries, canonical serialization, and digest semantics",
+        "scope": [
+          "src/lazybrick/canonical.py",
+          "src/lazybrick/records.py",
+          "src/lazybrick/runs/**",
+          "tests/**/*canonical*",
+          "tests/**/*identity*",
+          "tests/**/*record*",
+          "tests/**/*storage*"
+        ]
+      },
+      {
+        "path": "docs/plugin-trust.md",
+        "description": "Plugin protocol and explicit trust-boundary limitations",
+        "scope": [
+          "src/lazybrick/plugins/**",
+          "src/lazybrick/adapters/**",
+          "tests/plugins/**",
+          "examples/plugins/**"
+        ]
+      },
+      {
+        "path": "docs/licenses.md",
+        "description": "Third-party model, dataset, runtime, plugin, and dependency license policy",
+        "scope": [
+          "pyproject.toml",
+          "src/lazybrick/adapters/**",
+          "gpu/**",
+          "examples/**",
+          "provenance/**"
+        ]
+      },
+      {
+        "path": "docs/status.md",
+        "description": "Authoritative boundary between measured, planned, and unmeasured claims"
+      }
+    ],
+    "rules": [
+      {
+        "rule": "Treat recipe schemas, canonical JSON, CLI JSON and exit codes, stable reason codes, plugin protocol messages, manifests, identity records, state transitions, and evidence records as public versioned contracts. Flag silent breaking changes, ambiguous coercions, and unexplained golden-digest changes.",
+        "scope": [
+          "src/**",
+          "tests/**",
+          "examples/**",
+          "docs/**"
+        ]
+      },
+      {
+        "rule": "Fail closed. Unknown, mutable, malformed, or unsupported inputs must not silently fall back to a different algorithm, bit-width, model component, target, runtime, hardware path, plugin, or evidence tier. Prefer stable explicit errors before downloads, plugin execution, or GPU allocation.",
+        "scope": [
+          "src/**",
+          "tests/**"
+        ]
+      },
+      {
+        "rule": "Keep authored recipe identity, resolved plan identity, run and attempt identity, artifact identity, output-byte digests, and evidence identity distinct. A recipe digest covers authored content only; it is not artifact identity, provenance proof, independent reproduction, or a hardware result.",
+        "scope": [
+          "src/**",
+          "tests/**",
+          "docs/**",
+          "examples/**"
+        ]
+      },
+      {
+        "rule": "Default tests must be deterministic, CPU-only, offline, order-independent, and use recorded metadata or synthetic fixtures. Flag unit tests that can reach the network, download models, require credentials, depend on a GPU, or incur material cost. GPU workflows must remain explicitly opted in and isolated.",
+        "scope": [
+          "tests/**",
+          "src/**",
+          ".github/workflows/**",
+          "gpu/**"
+        ]
+      },
+      {
+        "rule": "Measurement claims require the immutable model revision, complete recipe, artifact, evaluator, runtime and dependency versions, exact hardware, matched workload, seeds where relevant, raw samples, and variance. Flag any claim that promotes schema validation, a dry run, import success, simulation, or an unexecuted workflow into quantization, accuracy, latency, throughput, memory, runtime-validation, or hardware evidence.",
+        "scope": [
+          "README.md",
+          "docs/**",
+          "gpu/**",
+          "src/lazybrick/evidence/**",
+          "tests/integration/evidence/**"
+        ]
+      },
+      {
+        "rule": "Review plugin and adapter changes as untrusted-code boundaries, not sandboxes. Check subprocess protocol framing, timeouts and termination, environment and secret leakage, path traversal, symlink races, unsafe deserialization, remote-code execution, partial outputs, retries, and cleanup. Never infer filesystem, network, GPU, or kernel isolation from a subprocess boundary.",
+        "scope": [
+          "src/lazybrick/plugins/**",
+          "src/lazybrick/adapters/**",
+          "tests/plugins/**",
+          "gpu/**"
+        ]
+      },
+      {
+        "rule": "Core lazybrick must stay lightweight. Flag unnecessary mandatory ML dependencies, unpinned mutable external implementations or data, unsupported Python-version assumptions, missing third-party license or provenance metadata, and dependency changes without supply-chain and compatibility analysis.",
+        "scope": [
+          "pyproject.toml",
+          "src/**",
+          "gpu/**",
+          "examples/**",
+          "provenance/**",
+          ".github/workflows/**"
+        ]
+      },
+      {
+        "rule": "Tests must prove the intended contract, not merely execute the happy path. Require focused coverage for malformed input, unsupported capabilities, partial failure, retry or resume behavior, tampering, and the exact regression being fixed. Do not accept weakened assertions or regenerated fixtures solely to make a change pass.",
+        "scope": [
+          "src/**",
+          "tests/**"
+        ]
+      },
+      {
+        "rule": "Documentation and examples must change with behavior. Use explicit Measured, Planned, and Not Planned boundaries; keep lazybrick lowercase; and flag examples that are neither runnable with immutable pins nor clearly labeled templates.",
+        "scope": [
+          "README.md",
+          "docs/**",
+          "examples/**",
+          "gpu/**"
+        ]
+      }
+    ]
+  },
+  "shouldUpdateDescription": false,
+  "statusCheck": true
+}
