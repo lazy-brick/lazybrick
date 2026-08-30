@@ -71,12 +71,15 @@ packages = ["src/lazybrick"]
 
 [tool.hatch.build.targets.sdist]
 include = [
+  "/CODE_OF_CONDUCT.md",
+  "/CONTRIBUTING.md",
   "/IMPLEMENTATION_BLUEPRINT.md",
   "/docs",
   "/LICENSE",
   "/NOTICE",
   "/README.md",
   "/RELEASING.md",
+  "/SECURITY.md",
   "/examples",
   "/gpu",
   "/pyproject.toml",

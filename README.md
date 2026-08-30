@@ -127,6 +127,9 @@ within tolerance, never byte-for-byte.
 
 | Page | Covers |
 | ---- | ------ |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | issues, branches, pull requests, AI usage, evidence rules, and checklists |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | community expectations and enforcement |
+| [SECURITY.md](SECURITY.md) | private vulnerability reporting and security scope |
 | [docs/recipes.md](docs/recipes.md) | the v0.1 schema, field by field, and every reason code |
 | [docs/identities.md](docs/identities.md) | `recipe_digest` vs `plan_digest` vs `artifact_id`, and why floats are banned |
 | [docs/plugin-trust.md](docs/plugin-trust.md) | the plugin trust boundary, and what is *not* sandboxed yet |
@@ -158,6 +161,10 @@ python -m twine check dist/*
 
 The whole suite runs on CPU with no network, against recorded Hugging Face
 fixtures.
+
+Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md); it
+covers public issue hygiene, branch naming, review expectations, and
+AI-assisted contribution requirements.
 
 ## License
 
