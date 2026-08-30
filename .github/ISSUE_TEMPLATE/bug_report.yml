@@ -1,0 +1,50 @@
+name: Bug report
+description: Report a reproducible lazybrick defect. Do not report vulnerabilities here.
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Search existing issues first. Remove secrets, private tracker references,
+        signed URLs, private paths, and proprietary data. Security issues belong
+        in the private process documented in SECURITY.md.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Include the smallest sanitized recipe, command, and deterministic steps.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: lazybrick, Python, OS, runtime, accelerator, driver, and relevant dependency versions.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs or evidence
+      description: Include complete error text. Remove tokens, private paths, and private inputs.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues and pull requests.
+          required: true
+        - label: I removed secrets, personal data, and private tracker references.
+          required: true
+        - label: This is not a security vulnerability.
+          required: true

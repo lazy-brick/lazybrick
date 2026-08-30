@@ -1,0 +1,49 @@
+name: Feature or enhancement
+description: Propose a scoped capability, compatibility, or workflow improvement.
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: User problem
+      description: Who is blocked, and by what current behavior?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed contract or behavior
+      description: Describe the smallest useful change without assuming one implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria and non-goals
+      description: State measurable completion gates and what is explicitly out of scope.
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Compatibility, evidence, security, and cost impact
+      description: Cover schemas, migration, provenance, hardware, dependencies, licensing, and maintenance.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What existing approach was tried, and why is it insufficient?
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues, pull requests, and documentation.
+          required: true
+        - label: This issue contains no private tracker link or key.
+          required: true
+        - label: I understand that planning does not authorize paid GPU execution.
+          required: true
