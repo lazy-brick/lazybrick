@@ -19,6 +19,10 @@ reviewable by someone who did not author it.
 Small typo, test, and narrowly scoped documentation fixes may go directly to a
 pull request when the intent is obvious.
 
+Coding agents must also follow `AGENTS.md`. Claude Code loads the same shared
+instructions through `CLAUDE.md`; these files are entrypoints, while this
+document remains the detailed contributor policy.
+
 ## Raising an issue
 
 Use GitHub Issues for public project work. Choose the closest template and make
@@ -109,11 +113,23 @@ by another worktree.
 
 ## Commits
 
-Use short Conventional Commit messages:
+Use short Conventional Commit messages with this structure:
+
+```text
+<type>(optional-scope): <imperative summary>
+```
+
+Allowed types are `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `research`,
+and `chore`. Add `!` before the colon for a breaking public contract and explain
+the migration in the commit body. Keep the subject concise, imperative, and free
+of a trailing period.
+
+Examples:
 
 ```text
 feat: add GPTQ capability declaration
 fix: reject mutable dataset revisions
+fix(resolver): preserve immutable cache entries
 docs: clarify hardware evidence requirements
 test: cover malformed plugin responses
 chore: update the supported Python matrix
@@ -126,14 +142,17 @@ passed the publication review.
 
 ## Development setup
 
+The preferred setup uses the committed uv lockfile:
+
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install -e ".[dev]"
-pytest
-python -m build
-python -m twine check dist/*
+uv sync --extra dev
+uv run pytest
+uv build
+uv run python -m twine check dist/*
 ```
+
+See `docs/development.md` for the pip fallback, supported Python versions, and
+optional integration environments.
 
 The default suite must remain CPU-only and offline. Tests requiring a GPU,
 model download, gated input, external service, or material cost must be marked,
@@ -142,7 +161,8 @@ disabled by default, and run only with explicit approval.
 ## Pull requests
 
 Open the PR against the branch that should receive the change, normally
-`main`. Use a draft PR while contracts or tests are still changing.
+`main`. Use a Conventional Commit-style PR title. Use a draft PR while contracts
+or tests are still changing.
 
 The description must include:
 

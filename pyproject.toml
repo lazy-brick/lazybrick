@@ -71,9 +71,10 @@ packages = ["src/lazybrick"]
 
 [tool.hatch.build.targets.sdist]
 include = [
+  "/AGENTS.md",
+  "/CLAUDE.md",
   "/CODE_OF_CONDUCT.md",
   "/CONTRIBUTING.md",
-  "/IMPLEMENTATION_BLUEPRINT.md",
   "/docs",
   "/LICENSE",
   "/NOTICE",
@@ -92,4 +93,12 @@ addopts = "-q"
 testpaths = ["tests"]
 markers = [
   "gpu: explicitly authorized tests requiring a CUDA GPU and model downloads",
+]
+
+[tool.uv]
+conflicts = [
+  [
+    { extra = "awq" },
+    { extra = "validation" },
+  ],
 ]
