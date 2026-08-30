@@ -10,6 +10,7 @@ from lazybrick.runs import verify_hashes
 
 
 REQUIRED = {
+    "identity.json",
     "recipe.yaml",
     "resolved_recipe.json",
     "plan.json",
@@ -36,6 +37,16 @@ def verify(store: Path) -> Path:
     if missing:
         raise RuntimeError(f"evidence bundle is missing: {missing}")
     artifact = json.loads((bundle / "artifact.json").read_text(encoding="utf-8"))
+    identity = json.loads((bundle / "identity.json").read_text(encoding="utf-8"))
+    plan = json.loads((bundle / "plan.json").read_text(encoding="utf-8"))
+    state = json.loads((bundle / "state-history.json").read_text(encoding="utf-8"))
+    for key in ("recipe_digest", "plan_digest", "artifact_id"):
+        if identity.get(key) != plan.get(key):
+            raise RuntimeError(f"identity and plan disagree on {key}")
+    if artifact.get("artifact_id") != identity.get("artifact_id"):
+        raise RuntimeError("artifact and identity disagree on artifact_id")
+    if state.get("state") != "SUCCEEDED":
+        raise RuntimeError("state history is not terminal SUCCEEDED")
     verify_hashes(bundle / "artifact", artifact["files"])
     results = json.loads((bundle / "results.json").read_text(encoding="utf-8"))
     if not results.get("generations"):

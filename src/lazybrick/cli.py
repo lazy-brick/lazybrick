@@ -163,8 +163,8 @@ def _hardware(path: str | None) -> HardwareProfile | None:
         return None
     try:
         return HardwareProfile.from_json(_load_json(path, "target"))
-    except KeyError as error:
-        raise _CliError(f"target {path!r} is missing {error}") from error
+    except (KeyError, TypeError, ValueError) as error:
+        raise _CliError(f"target {path!r} is invalid: {error}") from error
 
 
 # --------------------------------------------------------------------------
@@ -314,7 +314,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command is None:
         parser.print_help()
-        return OK
+        return REFUSED
 
     try:
         return _COMMANDS[args.command](args)

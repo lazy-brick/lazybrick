@@ -64,7 +64,11 @@ def _record_json(value: Mapping[str, Any]) -> bytes:
 def hash_files(root: str | Path) -> dict[str, str]:
     base = Path(root)
     result: dict[str, str] = {}
-    for path in sorted(item for item in base.rglob("*") if item.is_file()):
+    for path in sorted(base.rglob("*")):
+        if path.is_symlink():
+            raise RunStorageError(f"artifact must not contain symlinks: {path.relative_to(base)}")
+        if not path.is_file():
+            continue
         digest = sha256()
         with path.open("rb") as handle:
             for block in iter(lambda: handle.read(1024 * 1024), b""):
@@ -98,17 +102,33 @@ class AttemptBundle:
         self.write_json("identity.json", identity.to_dict())
 
     def write_json(self, relative_path: str, value: Mapping[str, Any]) -> Path:
-        path = self.staging / relative_path
+        path = self._record_path(relative_path)
         if path.exists():
             raise RunStorageError(f"run record already exists: {relative_path}")
         _atomic_bytes(path, _record_json(value) + b"\n")
         return path
 
     def write_text(self, relative_path: str, value: str) -> Path:
-        path = self.staging / relative_path
+        path = self._record_path(relative_path)
         if path.exists():
             raise RunStorageError(f"run record already exists: {relative_path}")
         _atomic_bytes(path, value.encode("utf-8"))
+        return path
+
+    def _record_path(self, relative_path: str) -> Path:
+        candidate = Path(relative_path)
+        if (
+            not relative_path
+            or candidate.is_absolute()
+            or ".." in candidate.parts
+            or candidate == Path(".")
+        ):
+            raise RunStorageError("run record path must stay inside the attempt bundle")
+        path = self.staging.joinpath(candidate)
+        try:
+            path.relative_to(self.staging)
+        except ValueError as error:
+            raise RunStorageError("run record path must stay inside the attempt bundle") from error
         return path
 
     def write_log(self, name: str, value: str) -> Path:
@@ -195,6 +215,18 @@ class RunStore:
         (self.root / "artifacts").mkdir(exist_ok=True)
 
     def begin(self, identity: RunIdentity) -> AttemptBundle:
+        for name, value in (
+            ("run_id", identity.run_id),
+            ("attempt_id", identity.attempt_id),
+        ):
+            if (
+                not isinstance(value, str)
+                or not value
+                or len(value) > 128
+                or Path(value).name != value
+                or value in {".", ".."}
+            ):
+                raise RunStorageError(f"{name} must be a safe single path component")
         staging = self.root / ".staging" / identity.attempt_id
         try:
             staging.mkdir()

@@ -15,13 +15,16 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from hashlib import sha256
 import json
 import os
 from pathlib import Path
 import re
+import tempfile
 from typing import Any, Protocol
 import urllib.error
 import urllib.request
+from urllib.parse import quote
 
 from lazybrick.errors import ValidationError, ValidationIssue
 from lazybrick.records import DatasetRef, ExecutionPlan, ModelRef
@@ -170,25 +173,38 @@ class ResolverCache:
         self.root = Path(root)
 
     def _path(self, uri: str, revision: str) -> Path:
-        safe = re.sub(r"[^A-Za-z0-9._-]", "_", f"{uri}@{revision}")
-        return self.root / f"{safe}.json"
+        key = sha256(f"{uri}\0{revision}".encode("utf-8")).hexdigest()
+        return self.root / f"{key}.json"
 
     def get(self, uri: str, revision: str) -> dict[str, Any] | None:
         path = self._path(uri, revision)
         if not path.is_file():
             return None
         try:
-            return json.loads(path.read_text(encoding="utf-8"))
+            payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             # A corrupt cache entry is a cache miss, never a hard failure.
             return None
+        if not isinstance(payload, dict):
+            return None
+        if payload.get("uri") != uri or payload.get("requested_revision") != revision:
+            return None
+        return payload
 
     def put(self, uri: str, revision: str, payload: Mapping[str, Any]) -> None:
         path = self._path(uri, revision)
         path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_suffix(".json.tmp")
-        temporary.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
-        temporary.replace(path)
+        descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+        temporary = Path(temporary_name)
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, sort_keys=True)
+                handle.flush()
+                os.fsync(handle.fileno())
+            temporary.replace(path)
+        except BaseException:
+            temporary.unlink(missing_ok=True)
+            raise
 
 
 # --------------------------------------------------------------------------
@@ -417,7 +433,7 @@ class Resolver:
     # -- models ------------------------------------------------------------
 
     def resolve_model(self, ref: ModelRef, path: str = "model") -> ResolvedModel:
-        cached = self._cache.get(ref.uri, ref.revision)
+        cached = self._cache.get(ref.uri, ref.revision) if (self._offline or ref.is_pinned) else None
         if cached is not None:
             return ResolvedModel.from_json(cached)
         if self._offline:
@@ -434,7 +450,7 @@ class Resolver:
 
         repo_id = _split_uri(ref.uri, f"{path}.uri", "hf")
         info = self._get_json(
-            f"{self._endpoint}/api/models/{repo_id}/revision/{ref.revision}"
+            f"{self._endpoint}/api/models/{repo_id}/revision/{quote(ref.revision, safe='')}"
         )
 
         revision = info.get("sha")
@@ -484,7 +500,7 @@ class Resolver:
     # -- datasets ----------------------------------------------------------
 
     def resolve_dataset(self, ref: DatasetRef, path: str = "dataset") -> ResolvedDataset:
-        cached = self._cache.get(ref.uri, ref.revision)
+        cached = self._cache.get(ref.uri, ref.revision) if (self._offline or ref.is_pinned) else None
         if cached is not None:
             return ResolvedDataset.from_json(cached)
         if self._offline:
@@ -500,7 +516,7 @@ class Resolver:
 
         repo_id = _split_uri(ref.uri, f"{path}.uri", "hf-dataset")
         info = self._get_json(
-            f"{self._endpoint}/api/datasets/{repo_id}/revision/{ref.revision}"
+            f"{self._endpoint}/api/datasets/{repo_id}/revision/{quote(ref.revision, safe='')}"
         )
         revision = info.get("sha")
         if not is_immutable_revision(revision):

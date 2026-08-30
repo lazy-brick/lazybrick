@@ -61,6 +61,8 @@ def _json(path: Path, value: Mapping[str, Any]) -> None:
 
 def _run_plan(recipe: Path, target: Path, plugin_manifest: Path, logs: Path) -> dict[str, Any]:
     command = [
+        sys.executable,
+        "-m",
         "lazybrick",
         "plan",
         str(recipe),
@@ -408,6 +410,8 @@ def execute(repo_root: Path, work_root: Path) -> Path:
         provenance = collect_provenance(
             commands=[
                 [
+                    sys.executable,
+                    "-m",
                     "lazybrick",
                     "plan",
                     str(recipe_path),
@@ -440,6 +444,8 @@ def execute(repo_root: Path, work_root: Path) -> Path:
             RunState.EXPORTING: RunState.EXPORT_FAILED,
             RunState.EVALUATING: RunState.EVALUATION_FAILED,
         }.get(state.state, RunState.EXECUTION_FAILED)
+        if state.terminal:
+            raise
         state.transition(
             failure_state,
             reason_code="smoke_job_failed",
@@ -458,7 +464,20 @@ def main() -> int:
     parser.add_argument("--repo-root", type=Path, required=True)
     parser.add_argument("--work-root", type=Path, required=True)
     args = parser.parse_args()
-    execute(args.repo_root.resolve(), args.work_root.resolve())
+    work_root = args.work_root.resolve()
+    try:
+        execute(args.repo_root.resolve(), work_root)
+    except Exception as error:
+        work_root.mkdir(parents=True, exist_ok=True)
+        _json(
+            work_root / "bootstrap-failure.json",
+            {
+                "state": "EXECUTION_FAILED",
+                "code": "smoke_job_failed",
+                "message": str(error) or type(error).__name__,
+            },
+        )
+        raise
     return 0
 
 

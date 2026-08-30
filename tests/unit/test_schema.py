@@ -151,6 +151,13 @@ class TestStages:
 
         assert codes(valid_recipe) == ["mutable_reference"]
 
+    def test_git_and_container_pin_cannot_be_combined(self, valid_recipe) -> None:
+        valid_recipe["stages"][0]["implementation"]["container"] = (
+            "ghcr.io/example/awq@sha256:" + "a" * 64
+        )
+
+        assert codes(valid_recipe) == ["invalid_value"]
+
     def test_container_must_be_digest_pinned(self, valid_recipe) -> None:
         valid_recipe["stages"][0]["implementation"] = {
             "container": "ghcr.io/example/awq:latest"

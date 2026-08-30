@@ -2,8 +2,9 @@
 
 Compose, run, and benchmark reproducible model-compression recipes.
 
-> **Pre-alpha:** `0.0.x` establishes the package, recipe envelope, and provenance
-> primitives. It does not yet execute quantization algorithms or inference.
+> **Pre-alpha:** `0.0.x` establishes the package, recipe envelope, provenance
+> primitives, and an opt-in GPU smoke workflow. The normal CLI remains
+> plan-only; no hardware result is claimed until an evidence bundle is published.
 
 ## Install
 
@@ -36,7 +37,8 @@ does not change it.
 It hashes the **authored recipe only**. It is not an artifact identity and does not
 prove reproducibility. Artifact identity has to be computed from resolved immutable
 inputs -- the pinned model revision, the plugin implementation, the calibration
-data, and the export configuration -- none of which LazyBrick resolves yet.
+data, and the export configuration. The planner resolves supported references;
+the authored-content digest still does not prove provenance or reproducibility.
 
 ## Validation
 
@@ -138,10 +140,10 @@ Pre-alpha. Planning is real: recipes are validated, references are resolved to
 immutable revisions, and incompatible plans are rejected with component-level
 reasons before anything is downloaded.
 
-Nothing is executed yet. No quantization has been run, no artifact produced, and
-no accuracy or performance number exists. See [docs/status.md](docs/status.md);
-that page is deliberately blunt about the difference between what is measured
-and what is intended.
+The repository contains an isolated Qwen3-0.6B AWQ-to-vLLM smoke workflow, but it
+has not produced a published evidence bundle. Therefore no quantization,
+accuracy, latency, throughput, or memory result is claimed. See
+[docs/status.md](docs/status.md).
 
 ## Development
 
