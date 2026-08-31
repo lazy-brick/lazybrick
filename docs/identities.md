@@ -62,6 +62,64 @@ So "reproduced" means:
 It does not mean identical weight hashes, and no LazyBrick gate should ever be
 written as though it does.
 
+## Bundle integrity
+
+`artifact_id` and the artifact file hashes cover the produced weights. They say
+nothing about the records stored beside them, so a successful attempt could keep
+valid weight hashes while its recipe, resolved plan, provenance, results, state
+history, or retained logs were changed underneath it.
+
+Every promoted attempt therefore carries `bundle-manifest.json`, covering **every
+regular file in the bundle except the manifest itself**:
+
+```json
+{
+  "manifest_version": "0.1",
+  "files": {
+    "results.json": {"sha256": "...", "size": 122},
+    "logs/run.log": {"sha256": "...", "size": 18},
+    "artifact/model.safetensors": {"sha256": "...", "size": 7}
+  }
+}
+```
+
+`manifest_version` is a versioned public contract. An unrecognized version is
+rejected rather than skipped.
+
+Symlinks and non-regular files are rejected anywhere in the bundle. A FIFO or
+device node is a hard failure, not a silent skip: skipping would leave the entry
+outside the manifest and therefore outside verification.
+
+### What the manifest does and does not prove
+
+`verify_bundle()` detects **missing, added, modified, and swapped** files, and
+then checks that the records agree with one another -- identity against plan,
+artifact against identity, state history terminal, and every `artifact.json`
+hash matching the same bytes in the manifest. Hashes alone would accept a bundle
+assembled from the records of two different attempts; the link checks reject it.
+
+It is an integrity manifest, **not a signature**. Anyone who can write to the
+store can rewrite a record and rebuild the manifest. So `bundle_digest` -- the
+SHA-256 of the canonical manifest -- is recorded *outside* the bundle, in the
+artifact index entry under `artifacts/<artifact_id>/<attempt_id>.json`, and
+verification takes it as an argument:
+
+```python
+verify_bundle(bundle, expected_digest=index["bundle_digest"])
+```
+
+Evidence published anywhere must carry that digest from a source the bundle does
+not control. Verify the complete bundle before running inference on it or
+publishing it.
+
+### Promotion and indexing are separately recoverable
+
+An attempt is promoted by an atomic rename, and only then indexed. If the index
+write fails the bundle is still real evidence, so the error names the repair
+rather than discarding it. `RunStore.reindex()` rebuilds any missing entry from
+the bundles on disk and is idempotent. Failed attempts are manifested too -- so a
+doctored failure cannot be presented as a success -- but are never indexed.
+
 ## Why floats are banned
 
 Every identity is the SHA-256 of a canonical byte string, and canonical means
