@@ -22,6 +22,9 @@ should be quoted from this repository.
 These are real, tested, and run on CPU with no network:
 
 - v0.1 recipe schema, with field-level reason codes
+- opt-in v0.2 stage numerical declarations, a supplied-parameter grouped U4
+  binary32 CPU oracle, and exact conformance report verification; this is a
+  narrow proposed numerical profile, not a full AWQ algorithm definition
 - canonical JSON and the three identities
 - reference resolution against **recorded** Hugging Face metadata for
   `Qwen/Qwen3-4B`, `Qwen/Qwen3-0.6B`, `Qwen/Qwen2.5-VL-7B-Instruct`, and
@@ -36,6 +39,10 @@ These are real, tested, and run on CPU with no network:
 returns the pinned SHA, dtype, parameter count, and licence shown in the README.
 
 ## Not yet true
+
+- No model adapter has a tested mapping to the proposed numerical profile.
+  Such stage declarations are rejected before execution. Bundle-attached
+  conformance requires the separately reviewed complete bundle verifier.
 
 - the AWQ and vLLM integration code exists, but no completed GPU evidence bundle
   has been published

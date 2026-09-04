@@ -107,3 +107,23 @@ Reported by `validate` and by `plan --json`.
 `unknown_plugin`, `calibration_required`, `remote_code_required`,
 `mutable_reference`, `missing_accelerator`, `accelerator_vendor_mismatch`,
 `insufficient_compute_capability`, `insufficient_devices`, `insufficient_memory`
+
+
+## Opt-in v0.2 stage semantics
+
+v0.1 remains supported without serialization or digest changes. v0.2 permits a
+stage-level `semantics` object containing exactly `profile` and `profile_digest`.
+Use `lazybrick conformance profile` to retrieve the versioned profile descriptor
+and its digest. Unknown profiles and mismatched profile digests are rejected.
+Mixed recipes may omit semantics on external stages; those stages remain
+unspecified. A declaration never establishes conformance. The initial profile
+has no tested model-adapter mapping, so plans requesting it are rejected with
+`unsupported_semantic_profile` before execution.
+
+New reason codes: `invalid_semantics`, `unknown_semantic_profile`,
+`semantic_digest_mismatch`, `semantic_version_mismatch`, `unknown_plan_version`,
+`unsupported_semantic_profile`. Plan JSON v0.2 reports declared/unspecified
+semantic status and a semantic digest; the v0.1 CLI JSON shape is unchanged.
+
+See [the numerical contract](semantics/affine-u4-g128-f32-v1.md) and
+[conformance verification](semantics/conformance.md).

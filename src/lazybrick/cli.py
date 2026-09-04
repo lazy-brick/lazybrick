@@ -116,6 +116,12 @@ def build_parser() -> argparse.ArgumentParser:
     shared(build)
     resolution(build)
 
+    conformance = commands.add_parser("conformance", help="Inspect a profile or verify scoped numerical evidence.")
+    conformance.add_argument("action", choices=("profile", "reference", "verify"))
+    conformance.add_argument("report", nargs="?")
+    conformance.add_argument("--output")
+    conformance.add_argument("--expected-digest")
+    conformance.add_argument("--context")
     return parser
 
 
@@ -243,6 +249,9 @@ def _cmd_plan(args: argparse.Namespace) -> int:
                 "resolved_recipe": resolved.to_json(),
                 "plan": plan.to_json(),
                 "compatibility": result.to_json(),
+                **({"semantic_digest": plan.semantic_digest,
+                    "semantic_status": "declared" if any(stage.semantics is not None for stage in plan.stages) else "unspecified"}
+                   if plan.plan_version == "0.2" else {}),
             }
         )
         return OK if result.accepted else INCOMPATIBLE
@@ -253,6 +262,9 @@ def _cmd_plan(args: argparse.Namespace) -> int:
     print(f"recipe_digest  {document.digest}")
     print(f"plan_digest    {plan.plan_digest}")
     print(f"artifact_id    {plan.artifact_id}")
+    if plan.plan_version == "0.2":
+        status = "declared" if any(stage.semantics is not None for stage in plan.stages) else "unspecified"
+        print(f"semantics      {plan.semantic_digest} ({status}; not conformance evidence)")
     print()
     if result.accepted:
         print("ACCEPTED: every capability intersection is non-empty.")
@@ -299,12 +311,43 @@ def _cmd_build(args: argparse.Namespace) -> int:
     return OK
 
 
+def _cmd_conformance(args: argparse.Namespace) -> int:
+    from lazybrick.canonical import digest
+    from lazybrick.semantics.profile import descriptor, profile_digest, SemanticError
+    from lazybrick.semantics.conformance import reference_report, verify_report, context_for
+    from lazybrick.errors import CanonicalizationError
+    try:
+        if args.action == "profile":
+            _emit({"profile": descriptor(), "profile_digest": profile_digest()})
+            return OK
+        if args.action == "reference":
+            if not args.output:
+                raise _CliError("reference requires --output; existing files are never overwritten")
+            report = reference_report()
+            with Path(args.output).open("x", encoding="utf-8") as handle:
+                handle.write(canonical_json(report).decode("utf-8") + "\n")
+            _emit({"report_digest": digest(report), "context": context_for(report),
+                   "scope": report["scope"], "execution_kind": report["execution_kind"], "status": report["status"]})
+            return OK if report["status"] == "passed" else INCOMPATIBLE
+        if not args.report or not args.expected_digest or not args.context:
+            raise _CliError("verify requires a report, --expected-digest and --context from a trusted external source")
+        report = json.loads(Path(args.report).read_text())
+        context = json.loads(Path(args.context).read_text())
+        verified = verify_report(report, expected_digest=args.expected_digest, expected_context=context)
+        _emit({"integrity_verified": True, "status": verified["status"],
+               "scope": verified["scope"], "execution_kind": verified["execution_kind"]})
+        return OK if verified["status"] == "passed" else INCOMPATIBLE
+    except (SemanticError, CanonicalizationError, OSError, ValueError, TypeError) as error:
+        raise _CliError(str(error)) from error
+
+
 _COMMANDS = {
     "validate": _cmd_validate,
     "digest": _cmd_digest,
     "inspect": _cmd_inspect,
     "plan": _cmd_plan,
     "build": _cmd_build,
+    "conformance": _cmd_conformance,
 }
 
 

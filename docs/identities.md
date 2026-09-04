@@ -176,6 +176,19 @@ Raw, non-identity run logs may contain finite JSON numbers for direct analysis.
 They are not canonical identity inputs; a value promoted into a digested public
 record must use the decimal-string contract above.
 
+
+## Numerical semantic identity (opt-in v0.2)
+
+A profile digest hashes the immutable numerical descriptor only. A plan's
+`semantic_digest` hashes the ordered stage IDs and their semantic declarations,
+including explicit unspecified stages, independently of implementation pins.
+Every v0.2 plan has this digest, even when all declarations are unspecified;
+stage order, IDs and absent declarations remain part of that identity. Only
+legacy v0.1 plans return no semantic digest. The CLI derives declaration status
+from the stages themselves, independently of whether an identity exists.
+It is not a recipe, build-input, output-byte, or evidence identity. Stage
+semantics also participate in v0.2 plan/build-input hashes. v0.1 serialization
+and every existing golden digest are deliberately unchanged.
 Artifact hashing also rejects non-regular entries immediately, before writing an
 artifact inventory. Directory traversal is allowed, but the artifact root must be
 a real directory and no symlink, FIFO, socket, or device may be omitted silently.

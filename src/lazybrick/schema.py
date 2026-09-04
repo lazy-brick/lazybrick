@@ -20,7 +20,7 @@ from typing import Any, Final
 from lazybrick.errors import _IssueCollector, ValidationIssue
 
 SCHEMA_VERSION: Final = "0.1"
-SUPPORTED_SCHEMA_VERSIONS: Final = frozenset({SCHEMA_VERSION})
+SUPPORTED_SCHEMA_VERSIONS: Final = frozenset({SCHEMA_VERSION, "0.2"})
 
 _COMMIT_SHA: Final = re.compile(r"\A[0-9a-f]{40}\Z")
 _CONTAINER_DIGEST: Final = re.compile(r"\A[^\s@]+@sha256:[0-9a-f]{64}\Z")
@@ -258,7 +258,7 @@ _STAGE_FIELDS: Final = frozenset(
 )
 
 
-def _stages(issues: _IssueCollector, stages: object) -> None:
+def _stages(issues: _IssueCollector, stages: object, version: str = "0.1") -> None:
     if not isinstance(stages, list) or not stages:
         issues.add("stages", "invalid_type", "stages must be a non-empty list")
         return
@@ -270,7 +270,14 @@ def _stages(issues: _IssueCollector, stages: object) -> None:
             issues.add(path, "invalid_type", "must be a mapping")
             continue
 
-        _check_unknown(issues, path, stage, _STAGE_FIELDS)
+        allowed = _STAGE_FIELDS | {"semantics"} if version == "0.2" else _STAGE_FIELDS
+        _check_unknown(issues, path, stage, allowed)
+        if version == "0.2" and "semantics" in stage:
+            from lazybrick.semantics.profile import validate_semantics, SemanticError
+            try:
+                validate_semantics(stage["semantics"])
+            except SemanticError as error:
+                issues.add(_join(path, "semantics"), error.code, str(error))
 
         stage_id = _text_field(issues, path, stage, "id")
         if stage_id is not None:
@@ -406,7 +413,7 @@ def validate_document(recipe: Mapping[str, Any]) -> tuple[ValidationIssue, ...]:
         _model(issues, model)
 
     if "stages" in recipe:
-        _stages(issues, recipe["stages"])
+        _stages(issues, recipe["stages"], version)
 
     export = _submapping(issues, "", recipe, "export", required=False)
     if export is not None:
