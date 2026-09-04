@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import replace
 import gc
 import json
 import os
@@ -37,6 +36,8 @@ from lazybrick.runs import (
     collect_provenance,
 )
 from lazybrick.plugins import PluginRunner, load_manifest
+from lazybrick.plugins.binding import ExecutionBinding
+from lazybrick.records import StageSpec, PluginManifest as CapabilityManifest
 
 
 MODEL_REPO_ID = "Qwen/Qwen3-0.6B"
@@ -154,6 +155,7 @@ def _execute_adapter(
     model_path: Path,
     calibration_path: Path,
     artifact_path: Path,
+    binding: ExecutionBinding,
 ) -> tuple[dict[str, object], dict[str, object], str, str]:
     manifest_path = (
         repo_root
@@ -163,10 +165,7 @@ def _execute_adapter(
         / "llm_compressor"
         / "plugin-manifest.json"
     )
-    manifest = replace(
-        load_manifest(manifest_path),
-        command=(sys.executable, "-m", "lazybrick.adapters.llm_compressor"),
-    )
+    manifest = load_manifest(manifest_path)
     forwarded_environment = {
         key: os.environ[key]
         for key in (
@@ -200,6 +199,7 @@ def _execute_adapter(
             "runtime": "vllm",
         },
         environment=forwarded_environment,
+        binding=binding,
     )
     return (
         result.response.result or {},
@@ -319,6 +319,16 @@ def execute(repo_root: Path, work_root: Path) -> Path:
     plan = _run_plan(recipe_path, target_path, plugin_manifest_path, logs)
     recipe_digest, plan_digest, planned_artifact_id, resolved_recipe = require_plan_fields(plan)
 
+    if resolved_recipe.get("resolved_recipe_version") != "0.1":
+        raise SmokeJobError("unsupported resolved recipe envelope")
+    recipe_body = resolved_recipe.get("recipe")
+    stages = recipe_body.get("stages") if isinstance(recipe_body, Mapping) else None
+    if not isinstance(stages, list) or len(stages) != 1:
+        raise SmokeJobError("smoke execution requires exactly one planned stage")
+    transport = load_manifest(repo_root / "src/lazybrick/adapters/llm_compressor/plugin-manifest.json")
+    capability = CapabilityManifest.from_json(json.loads(plugin_manifest_path.read_text()))
+    binding = ExecutionBinding.create(StageSpec.from_json(stages[0]), capability, transport)
+
     model_path = _download_model(work_root / "inputs" / "model")
     tokenizer = _load_tokenizer(model_path)
     calibration_path = work_root / "inputs" / "calibration"
@@ -377,6 +387,7 @@ def execute(repo_root: Path, work_root: Path) -> Path:
             model_path=model_path,
             calibration_path=calibration_path,
             artifact_path=bundle.artifact_dir,
+            binding=binding,
         )
         bundle.write_log("plugin.stdout.log", plugin_stdout)
         bundle.write_log("plugin.stderr.log", plugin_stderr)

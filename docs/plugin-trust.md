@@ -48,3 +48,21 @@ The following are stated as intent, not as implemented behaviour:
 
 The subprocess boundary and the pinning rules above are real today. The
 sandboxing is not. Do not run an untrusted plugin and assume otherwise.
+
+
+## Execution binding (transport manifest v0.2)
+
+The capability manifest and recipe identify the **upstream quantizer**. The
+transport manifest identifies the **adapter package**, its declared source pin,
+and its command. They are deliberately different implementations. Transport
+v0.2 adds an explicit upstream version and canonical implementation reference.
+`ExecutionBinding.create` rejects disagreements before plugin launch; the smoke
+job creates the binding before downloading weights. The effective interpreter
+is resolved once from the supported `python -m module` command and recorded with
+the stage, capability, and transport digests in invocation provenance.
+
+Existing v0.1 serializers and identities are unchanged. v0.2 transport requires
+an execution binding on every runner invocation. A binding demonstrates metadata
+agreement and installed package-version agreement, not that installed code
+matches a source commit, nor semantic conformance, sandboxing, or hardware
+support. Source attestation remains unimplemented and must not be inferred.
