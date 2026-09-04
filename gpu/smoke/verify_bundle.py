@@ -40,7 +40,10 @@ def verify(store: Path) -> Path:
 
     # The expected digest comes from the index, outside the bundle, so replacing
     # the manifest along with a record is caught too.
-    verify_bundle(bundle, expected_digest=index.get("bundle_digest"))
+    expected_digest = index.get("bundle_digest")
+    if expected_digest is None:
+        raise RuntimeError("artifact index is missing bundle_digest")
+    verify_bundle(bundle, expected_digest=expected_digest)
 
     if index.get("bundle") != bundle.relative_to(store).as_posix():
         raise RuntimeError("artifact index does not point at the verified bundle")
