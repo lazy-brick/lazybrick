@@ -8,7 +8,6 @@ import gc
 import json
 import os
 from pathlib import Path
-import resource
 import shutil
 import subprocess
 import sys
@@ -27,8 +26,10 @@ from lazybrick.adapters.llm_compressor.calibration import (
 )
 from lazybrick.evidence import (
     evidence_record,
-    render_non_thinking_prompts,
+    compare_benchmarks,
 )
+from lazybrick.evidence.assistant_quality import assistant_samples, compare_assistant_quality
+
 from lazybrick.runs import (
     RunIdentity,
     RunState,
@@ -48,6 +49,7 @@ EVALUATION_SAMPLES = 8
 CALIBRATION_SEED = 42
 EVALUATION_SEED = 1234
 MAX_SEQUENCE_LENGTH = 2048
+RUNTIME_SETTINGS = {"dtype": "bfloat16", "max_model_len": 2048, "gpu_memory_utilization": "0.85"}
 
 
 class SmokeJobError(RuntimeError):
@@ -249,53 +251,37 @@ def _eval_conversations(records: Iterable[Mapping[str, object]]) -> list[list[di
     return conversations
 
 
-def _vllm_evidence(
-    model_path: Path,
-    artifact_path: Path,
-    evaluation_prompts: list[str],
-    work_root: Path,
-    logs: Path,
-) -> tuple[list[dict[str, object]], dict[str, object], dict[str, object]]:
+def _vllm_evidence(model_path: Path, artifact_path: Path,
+                   evaluation_samples: list[dict[str, Any]], work_root: Path, logs: Path):
     vllm_python = os.environ.get("LAZYBRICK_VLLM_PYTHON")
     if not vllm_python or not Path(vllm_python).is_file():
         raise SmokeJobError("LAZYBRICK_VLLM_PYTHON does not name the locked vLLM interpreter")
-    input_path = work_root / "vllm-input.json"
-    output_path = work_root / "vllm-evidence.json"
-    _json(
-        input_path,
-        {
-            "model_path": str(model_path),
-            "artifact_path": str(artifact_path),
-            "evaluation_prompts": evaluation_prompts,
-            "seed": EVALUATION_SEED,
-        },
-    )
-    script = Path(__file__).with_name("validate.py")
-    completed = subprocess.run(
-        [vllm_python, str(script), "--input", str(input_path), "--output", str(output_path)],
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    (logs / "vllm.stdout.log").write_text(completed.stdout, encoding="utf-8")
-    (logs / "vllm.stderr.log").write_text(completed.stderr, encoding="utf-8")
-    if completed.returncode != 0:
-        raise SmokeJobError(f"locked vLLM validation failed with status {completed.returncode}")
-    if not output_path.is_file():
-        raise SmokeJobError("locked vLLM validation produced no evidence")
-    value = json.loads(output_path.read_text(encoding="utf-8"))
-    return value["generations"], value["quality"], value["performance"]
-
-
-def _peak_host_bytes() -> int:
-    # Linux ru_maxrss is KiB; the GPU job is Linux-only.
-    return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
-
-
-def _peak_gpu_bytes() -> int:
-    import torch
-
-    return int(torch.cuda.max_memory_allocated())
+    phases = {}
+    for phase in ("baseline", "quantized"):
+        input_path = work_root / f"vllm-{phase}-input.json"
+        output_path = work_root / f"vllm-{phase}-evidence.json"
+        _json(input_path, {"model_path": str(model_path), "artifact_path": str(artifact_path),
+            "evaluation_samples": evaluation_samples, "seed": EVALUATION_SEED,
+            "phase": phase, "runtime": RUNTIME_SETTINGS})
+        completed = subprocess.run([vllm_python, str(Path(__file__).with_name("validate.py")),
+            "--input", str(input_path), "--output", str(output_path)],
+            text=True, capture_output=True, check=False)
+        (logs / f"vllm-{phase}.stdout.log").write_text(completed.stdout)
+        (logs / f"vllm-{phase}.stderr.log").write_text(completed.stderr)
+        if completed.returncode or not output_path.is_file():
+            raise SmokeJobError(f"locked vLLM {phase} validation failed")
+        value = json.loads(output_path.read_text())
+        if value.get("schema_version") != "0.2" or value.get("phase") != phase:
+            raise SmokeJobError("vLLM returned mismatched evidence phase")
+        phases[phase] = value
+    baseline, quantized = phases["baseline"], phases["quantized"]
+    if baseline["runtime"] != quantized["runtime"]:
+        raise SmokeJobError("baseline and quantized runtime settings differ")
+    return (quantized["generations"],
+        compare_assistant_quality(baseline["quality"], quantized["quality"]),
+        compare_benchmarks(baseline["performance"], quantized["performance"]),
+        {"baseline": baseline["resources"], "quantized": quantized["resources"]},
+        baseline["runtime"])
 
 
 def execute(repo_root: Path, work_root: Path) -> Path:
@@ -370,9 +356,8 @@ def execute(repo_root: Path, work_root: Path) -> Path:
 
     try:
         state.transition(RunState.RUNNING)
-        torch.cuda.reset_peak_memory_stats()
         started = time.perf_counter()
-        _, plugin_provenance, plugin_stdout, plugin_stderr = _execute_adapter(
+        adapter_result, plugin_provenance, plugin_stdout, plugin_stderr = _execute_adapter(
             repo_root,
             model_path=model_path,
             calibration_path=calibration_path,
@@ -386,26 +371,27 @@ def execute(repo_root: Path, work_root: Path) -> Path:
         state.transition(RunState.EXPORTING)
         state.transition(RunState.EVALUATING)
         evaluation_records = _load_dataset("test_sft")
-        evaluation_prompts = render_non_thinking_prompts(
-            _eval_conversations(evaluation_records), tokenizer
+        evaluation_samples = assistant_samples(
+            _eval_conversations(evaluation_records), tokenizer, max_model_len=MAX_SEQUENCE_LENGTH
         )
-        generations, quality, performance = _vllm_evidence(
+        generations, quality, performance, resources, runtime = _vllm_evidence(
             model_path,
             bundle.artifact_dir,
-            evaluation_prompts,
+            evaluation_samples,
             work_root,
             logs,
         )
-        bundle.write_log("vllm.stdout.log", (logs / "vllm.stdout.log").read_text())
-        bundle.write_log("vllm.stderr.log", (logs / "vllm.stderr.log").read_text())
-        results = evidence_record(
-            generations=generations,
-            quality=quality,
-            performance=performance,
-            build_time_seconds=build_time,
-            peak_host_memory_bytes=_peak_host_bytes(),
-            peak_gpu_memory_bytes=_peak_gpu_bytes(),
-        )
+        for phase in ("baseline", "quantized"):
+            for stream in ("stdout", "stderr"):
+                name = f"vllm-{phase}.{stream}.log"
+                bundle.write_log(name, (logs / name).read_text())
+        resources["build"] = adapter_result["resources"]
+        results = {"schema_version": "0.2", "generations": generations,
+                   "quality": quality, "performance": performance,
+                   "resources": resources, "runtime": runtime,
+                   "build_time_seconds": str(build_time),
+                   "claims": {"quality_regression_gate": None,
+                              "note": "sampled process-tree resources; no universal threshold"}}
         bundle.write_json("results.json", results)
         provenance = collect_provenance(
             commands=[

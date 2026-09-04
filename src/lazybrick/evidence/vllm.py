@@ -32,10 +32,29 @@ def create_vllm_engine(
     *,
     seed: int,
     llm_factory: Callable[..., object] | None = None,
+    runtime: Mapping[str, object] | None = None,
 ) -> object:
     path = Path(artifact_path).resolve()
     if not path.is_dir():
         raise EvidenceError(f"artifact directory does not exist: {path}")
+    options: dict[str, object] = {}
+    if runtime is not None:
+        if set(runtime) != {"dtype", "max_model_len", "gpu_memory_utilization"}:
+            raise EvidenceError("runtime settings must explicitly pin dtype, context, and GPU utilization")
+        if runtime["dtype"] not in {"float16", "bfloat16", "float32"}:
+            raise EvidenceError("runtime dtype is unsupported")
+        if type(runtime["max_model_len"]) is not int or runtime["max_model_len"] < 2:
+            raise EvidenceError("runtime context bound is invalid")
+        utilization = runtime["gpu_memory_utilization"]
+        if not isinstance(utilization, str):
+            raise EvidenceError("GPU utilization must be an explicit decimal string")
+        try:
+            value = float(utilization)
+        except ValueError as error:
+            raise EvidenceError("invalid GPU utilization") from error
+        if not 0 < value < 1:
+            raise EvidenceError("invalid GPU utilization")
+        options = dict(runtime, gpu_memory_utilization=value)
     if llm_factory is None:
         try:
             from vllm import LLM
@@ -49,6 +68,7 @@ def create_vllm_engine(
         tensor_parallel_size=1,
         trust_remote_code=False,
         seed=seed,
+        **options,
     )
 
 

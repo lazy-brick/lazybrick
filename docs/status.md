@@ -46,3 +46,26 @@ returns the pinned SHA, dtype, parameter count, and licence shown in the README.
 
 When any of this changes, it belongs in the table above with the exact model,
 recipe, runtime, hardware, and workload -- or it does not get claimed.
+
+
+## Prepared evidence protocol update (unmeasured)
+
+The smoke job now prepares final-assistant continuation loss under protocol v2.
+It checks token-prefix boundaries exactly and rejects templates whose generation
+prefix does not match the complete conversation. The selected continuation
+includes terminating template tokens; user/system content and the assistant
+header are excluded. Input token IDs, scoring boundaries and selected logprobs
+are retained. The legacy v1 full-prompt metric is not relabeled as assistant loss.
+
+Build, baseline and quantized resources are sampled in their allocating process
+trees. Baseline and quantized vLLM phases use separate fresh processes with
+explicit BF16, context 2048, GPU utilization 0.85 and matched seeds/workloads.
+Reports retain raw samples, interval and scope. Sampled peaks are lower bounds;
+summed RSS can double-count shared pages. Missing sampling data fails the run.
+No real tokenizer, vLLM, CUDA, or process-memory measurement has been validated
+by CPU fixtures; those remain explicit GPU-smoke acceptance gates.
+
+The smoke recipe's evaluation protocol changes intentionally from v1 to v2,
+changing its authored recipe and plan digests. Its build-input artifact identity
+is unchanged because evaluation is excluded. Existing Qwen3-4B golden fixtures
+are unchanged; no historical result is reinterpreted.
