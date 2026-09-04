@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -116,6 +117,51 @@ def test_verifier_rejects_failed_attempt(tmp_path: Path) -> None:
 
     with pytest.raises(RuntimeError, match="did not succeed"):
         module.verify(tmp_path)
+
+
+def test_bundle_verifier_requires_external_bundle_digest(tmp_path: Path) -> None:
+    module = load_script("verify_bundle")
+    store = RunStore(tmp_path)
+    identity = RunIdentity.create(
+        recipe_digest="a" * 64, plan_digest="b" * 64, artifact_id="c" * 64
+    )
+    bundle = store.begin(identity)
+    bundle.write_text("recipe.yaml", "schema_version: '0.1'\n")
+    bundle.write_json("resolved_recipe.json", {"resolved": True})
+    bundle.write_json(
+        "plan.json",
+        {
+            "accepted": True,
+            "recipe_digest": identity.recipe_digest,
+            "plan_digest": identity.plan_digest,
+            "artifact_id": identity.artifact_id,
+        },
+    )
+    bundle.write_json("provenance.json", {"python": "test"})
+    bundle.write_json(
+        "results.json",
+        {
+            "generations": [{"prompt": "a", "output": "b"}],
+            "quality": {"baseline": {"score": 1}, "quantized": {"score": 1}},
+            "performance": {
+                "baseline_raw_samples": [{"latency": 1}],
+                "quantized_raw_samples": [{"latency": 1}],
+            },
+        },
+    )
+    bundle.write_json("state-history.json", {"state": "SUCCEEDED"})
+    (bundle.artifact_dir / "model.safetensors").write_bytes(b"weights")
+    promoted = bundle.finalize_success({"format": "compressed-tensors/safetensors"})
+
+    index_path = next((tmp_path / "artifacts").glob("*/*.json"))
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    index.pop("bundle_digest")
+    index_path.write_text(json.dumps(index), encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="missing bundle_digest"):
+        module.verify(tmp_path)
+
+    assert promoted.is_dir()
 
 
 @pytest.mark.gpu

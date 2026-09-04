@@ -62,6 +62,97 @@ So "reproduced" means:
 It does not mean identical weight hashes, and no LazyBrick gate should ever be
 written as though it does.
 
+## Bundle integrity
+
+`artifact_id` and the artifact file hashes cover the produced weights. They say
+nothing about the records stored beside them, so a successful attempt could keep
+valid weight hashes while its recipe, resolved plan, provenance, results, state
+history, or retained logs were changed underneath it.
+
+Every promoted attempt therefore carries `bundle-manifest.json`, covering **every
+regular file in the bundle except the manifest itself**:
+
+```json
+{
+  "manifest_version": "0.1",
+  "files": {
+    "results.json": {"sha256": "...", "size": 122},
+    "logs/run.log": {"sha256": "...", "size": 18},
+    "artifact/model.safetensors": {"sha256": "...", "size": 7}
+  }
+}
+```
+
+`manifest_version` is a versioned public contract. An unrecognized version is
+rejected rather than skipped.
+
+Symlinks and non-regular files are rejected anywhere in the bundle. A FIFO or
+device node is a hard failure, not a silent skip: skipping would leave the entry
+outside the manifest and therefore outside verification.
+
+### What the manifest does and does not prove
+
+`verify_bundle()` detects **missing, added, modified, and swapped** files, and
+then checks that the records agree with one another -- identity against plan,
+artifact against identity, state history terminal, and every `artifact.json`
+hash matching the same bytes in the manifest. Hashes alone would accept a bundle
+assembled from the records of two different attempts; the link checks reject it.
+
+It is an integrity manifest, **not a signature**. Anyone who can write to the
+store can rewrite a record and rebuild the manifest. So `bundle_digest` -- the
+SHA-256 of the canonical manifest -- is recorded *outside* the bundle, in the
+artifact index entry under `artifacts/<artifact_id>/<attempt_id>.json`, and
+verification takes it as an argument:
+
+```python
+verify_bundle(bundle, expected_digest=index["bundle_digest"])
+```
+
+Evidence published anywhere must carry that digest from a source the bundle does
+not control. Verify the complete bundle before running inference on it or
+publishing it.
+
+### Promotion and indexing are separately recoverable
+
+Before a successful attempt is promoted, its complete bundle is verified and
+its original manifest digest and five run identity fields are durably recorded
+in `anchors/<run_id>/<attempt_id>.json`, outside the bundle. This promotion
+receipt has `receipt_version: "1"`. The receipt must be protected by the same
+trust boundary as the external artifact index; it is not a signature and does
+not defend against a writer who can alter both the store anchors and bundles.
+
+The order is: write manifest, verify the staged bundle, persist the receipt,
+promote by atomic rename, verify against the receipt, then create the index.
+Receipt failure prevents promotion. An index failure after promotion leaves the
+receipt available for recovery. `RunStore.reindex()` verifies each successful
+bundle against that original receipt before creating a missing index. It never
+computes a replacement trusted digest from promoted bundle content. Existing
+index entries must be byte-identical and are never overwritten, even when a
+concurrent writer creates the destination first. Failed attempts are not indexed.
+
+Recovery refuses a missing or malformed receipt, changed evidence, a conflicting
+index, or identity fields that disagree with the receipt or the actual
+`runs/<run_id>/attempts/<attempt_id>` location. Legacy promoted bundles without a
+receipt cannot be recovered automatically; preserve and consult an independently
+trusted original digest through a separately reviewed migration process. Do not
+bootstrap a receipt from the bundle being recovered.
+
+Run/attempt IDs are single ASCII path components, 1–128 characters, beginning
+with an alphanumeric character and followed by alphanumerics, dots, underscores
+or hyphens. Artifact, recipe and plan digests must be 64 lowercase hexadecimal
+characters. Receipt/index directories and files use descriptor-relative,
+no-follow access; atomic create-only publication refuses symlinks, nonregular
+files and replacement of an existing record. Store directories must remain
+under trusted ownership, and writers must be quiescent during verification.
+
+Manifest parsing requires exactly `manifest_version` and `files`; every file
+entry requires exactly a lowercase SHA-256 and a nonnegative integer size
+(booleans are invalid). Paths must be normalized relative POSIX paths with no
+traversal, backslashes, drive prefixes, or self-reference. Invalid types,
+unknown fields, duplicate JSON keys, nonfinite values, and malformed JSON raise
+`BundleIntegrityError`, with or without an expected digest. Valid v0.1 manifest
+bytes and digests are unchanged; only invalid input is rejected more strictly.
+
 ## Why floats are banned
 
 Every identity is the SHA-256 of a canonical byte string, and canonical means

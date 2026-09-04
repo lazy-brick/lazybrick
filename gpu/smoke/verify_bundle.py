@@ -1,4 +1,10 @@
-"""Fail closed unless exactly one successful smoke evidence bundle is complete."""
+"""Fail closed unless exactly one successful smoke evidence bundle is complete.
+
+Structural integrity -- file coverage, symlink rejection, and record agreement --
+lives in `lazybrick.runs.bundle` so it is exercised by the CPU/offline suite.
+What remains here is what is specific to the smoke workflow: that exactly one
+attempt exists, and that its results carry the evidence the workflow promised.
+"""
 
 from __future__ import annotations
 
@@ -6,20 +12,7 @@ import argparse
 import json
 from pathlib import Path
 
-from lazybrick.runs import verify_hashes
-
-
-REQUIRED = {
-    "identity.json",
-    "recipe.yaml",
-    "resolved_recipe.json",
-    "plan.json",
-    "artifact.json",
-    "provenance.json",
-    "results.json",
-    "state-history.json",
-    "status.json",
-}
+from lazybrick.runs import verify_bundle
 
 
 def verify(store: Path) -> Path:
@@ -27,27 +20,34 @@ def verify(store: Path) -> Path:
     if len(attempts) != 1:
         raise RuntimeError(f"expected one attempt bundle, found {len(attempts)}")
     bundle = attempts[0]
+
+    # Cheap early exit with a precise reason. This reads an as-yet unverified
+    # record, which is safe in one direction only: a bundle claiming success
+    # still goes through full verification below.
     status_path = bundle / "status.json"
     if not status_path.is_file():
         raise RuntimeError("evidence bundle is missing status.json")
     status = json.loads(status_path.read_text(encoding="utf-8"))
     if status.get("state") != "SUCCEEDED":
         raise RuntimeError(f"smoke attempt did not succeed: {status}")
-    missing = sorted(name for name in REQUIRED if not (bundle / name).is_file())
-    if missing:
-        raise RuntimeError(f"evidence bundle is missing: {missing}")
-    artifact = json.loads((bundle / "artifact.json").read_text(encoding="utf-8"))
-    identity = json.loads((bundle / "identity.json").read_text(encoding="utf-8"))
-    plan = json.loads((bundle / "plan.json").read_text(encoding="utf-8"))
-    state = json.loads((bundle / "state-history.json").read_text(encoding="utf-8"))
-    for key in ("recipe_digest", "plan_digest", "artifact_id"):
-        if identity.get(key) != plan.get(key):
-            raise RuntimeError(f"identity and plan disagree on {key}")
-    if artifact.get("artifact_id") != identity.get("artifact_id"):
-        raise RuntimeError("artifact and identity disagree on artifact_id")
-    if state.get("state") != "SUCCEEDED":
-        raise RuntimeError("state history is not terminal SUCCEEDED")
-    verify_hashes(bundle / "artifact", artifact["files"])
+
+    index_entries = sorted((store / "artifacts").glob("*/*.json"))
+    if len(index_entries) != 1:
+        raise RuntimeError(
+            f"expected one artifact index entry, found {len(index_entries)}"
+        )
+    index = json.loads(index_entries[0].read_text(encoding="utf-8"))
+
+    # The expected digest comes from the index, outside the bundle, so replacing
+    # the manifest along with a record is caught too.
+    expected_digest = index.get("bundle_digest")
+    if expected_digest is None:
+        raise RuntimeError("artifact index is missing bundle_digest")
+    verify_bundle(bundle, expected_digest=expected_digest)
+
+    if index.get("bundle") != bundle.relative_to(store).as_posix():
+        raise RuntimeError("artifact index does not point at the verified bundle")
+
     results = json.loads((bundle / "results.json").read_text(encoding="utf-8"))
     if not results.get("generations"):
         raise RuntimeError("evidence contains no raw generation outputs")
