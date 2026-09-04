@@ -320,3 +320,211 @@ def test_non_canonical_manifest_is_an_integrity_error(tmp_path: Path) -> None:
 
     with pytest.raises(BundleIntegrityError, match="not canonical"):
         verify_bundle(bundle, expected_digest="0" * 64)
+
+
+def _rewrite_manifest(bundle):
+    (bundle / MANIFEST_NAME).unlink()
+    write_manifest(bundle)
+
+
+@pytest.mark.parametrize("delete_index", [False, True])
+def test_reindex_cannot_bless_rewritten_bundle(tmp_path, delete_index):
+    store, bundle = _succeeded_bundle(tmp_path / "store")
+    entry = next((store.root / "artifacts").glob("*/*.json"))
+    original = entry.read_bytes()
+    receipt = next((store.root / "anchors").glob("*/*.json"))
+    anchor = receipt.read_bytes()
+    if delete_index:
+        entry.unlink()
+    (bundle / "results.json").write_text('{"quality":"doctored"}')
+    _rewrite_manifest(bundle)
+    with pytest.raises(BundleIntegrityError, match="manifest itself was replaced"):
+        store.reindex()
+    assert receipt.read_bytes() == anchor
+    if delete_index:
+        assert not entry.exists()
+    else:
+        assert entry.read_bytes() == original
+
+
+def test_missing_receipt_cannot_be_rebuilt_from_bundle(tmp_path):
+    from lazybrick.runs import RunStorageError
+    store, bundle = _succeeded_bundle(tmp_path / "store")
+    entry = next((store.root / "artifacts").glob("*/*.json"))
+    entry.unlink()
+    next((store.root / "anchors").glob("*/*.json")).unlink()
+    with pytest.raises(RunStorageError, match="trusted promotion receipt"):
+        store.reindex()
+    assert not entry.exists()
+
+
+def test_reindex_preserves_conflicting_existing_index(tmp_path):
+    from lazybrick.runs import RunStorageError
+    store, bundle = _succeeded_bundle(tmp_path / "store")
+    entry = next((store.root / "artifacts").glob("*/*.json"))
+    changed = json.loads(entry.read_bytes())
+    changed["bundle_digest"] = "f" * 64
+    entry.write_text(json.dumps(changed))
+    before = entry.read_bytes()
+    with pytest.raises(RunStorageError, match="refusing to overwrite"):
+        store.index_attempt(bundle)
+    assert entry.read_bytes() == before
+
+
+@pytest.mark.parametrize("field", ["artifact_id", "run_id", "attempt_id"])
+@pytest.mark.parametrize("bad", ["../../escape", "/absolute", "..\\escape", ".", "", "bad\x00value", "bad:value"])
+def test_bundle_controlled_identity_never_selects_index_path(tmp_path, field, bad):
+    from lazybrick.runs import RunStorageError
+    store, bundle = _succeeded_bundle(tmp_path / "store")
+    entry = next((store.root / "artifacts").glob("*/*.json"))
+    before = entry.read_bytes()
+    identity = json.loads((bundle / "identity.json").read_bytes())
+    identity[field] = bad
+    (bundle / "identity.json").write_text(json.dumps(identity))
+    _rewrite_manifest(bundle)
+    with pytest.raises((RunStorageError, BundleIntegrityError)):
+        store.reindex()
+    assert entry.read_bytes() == before
+    assert list((store.root / "artifacts").glob("*/*.json")) == [entry]
+    assert not (tmp_path / "escape.json").exists()
+
+
+@pytest.mark.parametrize("field", ["artifact_id", "run_id", "attempt_id"])
+def test_invalid_receipt_identity_is_rejected_before_directory_creation(tmp_path, monkeypatch, field):
+    from lazybrick.runs import RunStorageError
+    store, bundle = _succeeded_bundle(tmp_path / "store")
+    receipt = next((store.root / "anchors").glob("*/*.json"))
+    value = json.loads(receipt.read_bytes())
+    value["identity"][field] = "../../escape"
+    receipt.write_text(json.dumps(value))
+    def no_write(*args, **kwargs):
+        pytest.fail("invalid identity reached index creation")
+    monkeypatch.setattr(store, "_create_record", no_write)
+    with pytest.raises(RunStorageError):
+        store.index_attempt(bundle)
+
+
+@pytest.mark.parametrize("location", ["artifacts", "artifact_directory", "entry", "anchors", "run_directory", "bundle"])
+def test_reindex_rejects_symlinked_store_paths(tmp_path, location):
+    from lazybrick.runs import RunStorageError
+    store, bundle = _succeeded_bundle(tmp_path / "store")
+    entry = next((store.root / "artifacts").glob("*/*.json"))
+    target = {"artifacts": store.root / "artifacts", "artifact_directory": entry.parent,
+              "entry": entry, "anchors": store.root / "anchors",
+              "run_directory": bundle.parent.parent, "bundle": bundle}[location]
+    retired = tmp_path / "retired"
+    target.rename(retired)
+    target.symlink_to(retired, target_is_directory=retired.is_dir())
+    before = entry.read_bytes()
+    with pytest.raises(RunStorageError):
+        store.reindex()
+    assert entry.read_bytes() == before
+
+
+def test_index_is_create_only_even_if_another_writer_wins(tmp_path, monkeypatch):
+    from lazybrick.runs import RunStorageError
+    store, bundle = _succeeded_bundle(tmp_path / "store")
+    entry = next((store.root / "artifacts").glob("*/*.json"))
+    entry.unlink()
+    real_link = os.link
+    def racing_link(src, dst, *args, **kwargs):
+        entry.write_bytes(b"independent winner")
+        return real_link(src, dst, *args, **kwargs)
+    monkeypatch.setattr(os, "link", racing_link)
+    with pytest.raises(RunStorageError, match="refusing to overwrite"):
+        store.reindex()
+    assert entry.read_bytes() == b"independent winner"
+    assert list(entry.parent.glob(".pending-*")) == []
+
+
+def test_promotion_receipt_survives_index_write_failure(tmp_path, monkeypatch):
+    from lazybrick.runs import RunStorageError
+    original = RunStore.index_attempt
+    def fail(*args, **kwargs):
+        raise OSError("simulated index failure")
+    monkeypatch.setattr(RunStore, "index_attempt", fail)
+    with pytest.raises(RunStorageError, match="promoted but could not be indexed"):
+        _succeeded_bundle(tmp_path / "store")
+    store = RunStore(tmp_path / "store")
+    assert len(list((store.root / "runs").glob("*/attempts/*"))) == 1
+    receipt = next((store.root / "anchors").glob("*/*.json"))
+    before = receipt.read_bytes()
+    monkeypatch.setattr(RunStore, "index_attempt", original)
+    assert len(store.reindex()) == 1
+    assert receipt.read_bytes() == before
+
+
+def test_receipt_write_failure_prevents_promotion(tmp_path, monkeypatch):
+    from lazybrick.runs import RunStorageError
+    def fail(*args, **kwargs):
+        raise RunStorageError("receipt write failed")
+    monkeypatch.setattr(RunStore, "_record_promotion", fail)
+    with pytest.raises(RunStorageError, match="receipt write failed"):
+        _succeeded_bundle(tmp_path / "store")
+    assert list((tmp_path / "store" / "runs").glob("*/attempts/*")) == []
+    assert list((tmp_path / "store" / "artifacts").glob("*/*.json")) == []
+
+
+@pytest.mark.parametrize("entry", ["text", [], None, 1, True, {},
+    {"sha256":"a"*64}, {"size":1}, {"sha256":"a"*64,"size":True},
+    {"sha256":"a"*64,"size":-1}, {"sha256":"a"*64,"size":1.5},
+    {"sha256":"A"*64,"size":1}, {"sha256":42,"size":1},
+    {"sha256":"short","size":1}, {"sha256":"a"*64,"size":1,"extra":0}])
+@pytest.mark.parametrize("anchored", [False, True])
+def test_malformed_manifest_entries_are_integrity_errors(tmp_path, entry, anchored):
+    manifest = {"manifest_version":"0.1", "files":{"record.json":entry}}
+    (tmp_path / "record.json").write_text("{}")
+    (tmp_path / MANIFEST_NAME).write_text(json.dumps(manifest))
+    with pytest.raises(BundleIntegrityError):
+        read_manifest(tmp_path)
+    with pytest.raises(BundleIntegrityError):
+        verify_manifest(tmp_path, expected_digest="0"*64 if anchored else None)
+
+
+@pytest.mark.parametrize("path", ["../outside", "/absolute", "a//b", "a/./b", "a/../b", "a\\b", "C:thing", "", MANIFEST_NAME])
+def test_manifest_rejects_unsafe_or_self_paths(tmp_path, path):
+    (tmp_path / MANIFEST_NAME).write_text(json.dumps({"manifest_version":"0.1", "files":{
+        path:{"sha256":"a"*64,"size":0}}}))
+    with pytest.raises(BundleIntegrityError):
+        verify_manifest(tmp_path)
+
+
+@pytest.mark.parametrize("data", [
+    b'{"manifest_version":"0.1","files":{},"files":{}}',
+    b'{"manifest_version":"0.1","files":{"x":{"sha256":"a","size":NaN}}}',
+    b'[]', b'null', b'\xff', b'{',
+    b'{"manifest_version":"0.1","files":{},"extra":1}',
+])
+def test_invalid_manifest_json_is_an_integrity_error(tmp_path, data):
+    (tmp_path / MANIFEST_NAME).write_bytes(data)
+    with pytest.raises(BundleIntegrityError):
+        read_manifest(tmp_path)
+
+
+def test_idempotent_reindex_does_not_replace_existing_anchor_bytes(tmp_path):
+    store, _ = _succeeded_bundle(tmp_path / "store")
+    paths = [next((store.root / "artifacts").glob("*/*.json")),
+             next((store.root / "anchors").glob("*/*.json"))]
+    before = []
+    for path in paths:
+        os.utime(path, ns=(1234567890000000000, 1234567890000000000))
+        before.append((path.stat().st_ino, path.stat().st_mtime_ns, path.read_bytes()))
+    store.reindex()
+    assert [(p.stat().st_ino, p.stat().st_mtime_ns, p.read_bytes()) for p in paths] == before
+
+
+def test_tampering_between_promotion_and_indexing_is_rejected(tmp_path, monkeypatch):
+    from lazybrick.runs import AttemptBundle, RunStorageError
+    promote = AttemptBundle._promote_attempt
+    def tampering_promote(self):
+        destination = promote(self)
+        (destination / "results.json").write_text('{"tampered":true}')
+        _rewrite_manifest(destination)
+        return destination
+    monkeypatch.setattr(AttemptBundle, "_promote_attempt", tampering_promote)
+    with pytest.raises(RunStorageError, match="promoted but could not be indexed"):
+        _succeeded_bundle(tmp_path / "store")
+    assert list((tmp_path / "store" / "artifacts").glob("*/*.json")) == []
+    store = RunStore(tmp_path / "store")
+    with pytest.raises(BundleIntegrityError, match="manifest itself was replaced"):
+        store.reindex()

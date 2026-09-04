@@ -9,7 +9,7 @@ closes that gap by covering *every* regular file in the bundle.
 Scope, stated plainly: this detects missing, added, modified, and swapped files.
 It is an integrity manifest, not a signature. Anyone who can write to the store
 can rewrite a record and rebuild the manifest, so `bundle_digest` is recorded
-outside the bundle -- in the artifact index -- and evidence published anywhere
+outside the bundle -- in a pre-promotion receipt and the artifact index -- and evidence published anywhere
 must carry that digest from a source the bundle itself does not control.
 """
 
@@ -18,6 +18,7 @@ from __future__ import annotations
 from hashlib import sha256
 import json
 import os
+import re
 from pathlib import Path
 import stat
 from typing import Any, Mapping
@@ -112,12 +113,59 @@ def build_manifest(bundle: str | Path) -> dict[str, Any]:
             "sha256": _sha256_file(path),
             "size": path.lstat().st_size,
         }
-    return {"manifest_version": BUNDLE_MANIFEST_VERSION, "files": files}
+    return _validate_manifest({"manifest_version": BUNDLE_MANIFEST_VERSION, "files": files})
+
+
+def _relative_file(value: object) -> None:
+    if (not isinstance(value, str) or not value or "\\" in value or ":" in value
+            or any(ord(c) < 32 or 0xD800 <= ord(c) <= 0xDFFF for c in value)
+            or any(part in {"", ".", ".."} for part in value.split("/"))):
+        raise BundleIntegrityError("manifest contains an unsafe relative file path")
+
+
+def _validate_manifest(manifest: object) -> dict[str, Any]:
+    if not isinstance(manifest, dict):
+        raise BundleIntegrityError(f"{MANIFEST_NAME} must be a JSON object")
+    if manifest.get("manifest_version") != BUNDLE_MANIFEST_VERSION:
+        raise BundleIntegrityError("unsupported bundle manifest version")
+    if set(manifest) != {"manifest_version", "files"}:
+        raise BundleIntegrityError("manifest has unknown or missing fields")
+    if not isinstance(manifest["files"], dict):
+        raise BundleIntegrityError(f"{MANIFEST_NAME} has no files mapping")
+    for name, entry in manifest["files"].items():
+        _relative_file(name)
+        if name == MANIFEST_NAME:
+            raise BundleIntegrityError("manifest must not include itself")
+        if not isinstance(entry, dict) or set(entry) != {"sha256", "size"}:
+            raise BundleIntegrityError("manifest file entry requires exactly sha256 and size")
+        if not isinstance(entry["sha256"], str) or re.fullmatch(r"[0-9a-f]{64}", entry["sha256"]) is None:
+            raise BundleIntegrityError("manifest file digest must be lowercase SHA-256")
+        if type(entry["size"]) is not int or entry["size"] < 0:
+            raise BundleIntegrityError("manifest size is not canonical: expected a nonnegative integer")
+    try:
+        canonical_json(manifest)
+    except (IdentityError, ValueError, UnicodeError, RecursionError) as error:
+        raise BundleIntegrityError("bundle manifest is not canonical") from error
+    return manifest
+
+
+def _json_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise BundleIntegrityError("duplicate JSON object key")
+        result[key] = value
+    return result
+
+
+def _json_constant(value: str) -> None:
+    raise BundleIntegrityError("nonfinite JSON value")
 
 
 def bundle_digest(manifest: Mapping[str, Any]) -> str:
     """Identity of the manifest itself, for recording outside the bundle."""
 
+    _validate_manifest(manifest)
     try:
         return sha256(canonical_json(manifest)).hexdigest()
     except IdentityError as error:
@@ -141,24 +189,7 @@ def write_manifest(bundle: str | Path) -> str:
 
 def read_manifest(bundle: str | Path) -> dict[str, Any]:
     root = Path(bundle)
-    path = root / MANIFEST_NAME
-    if path.is_symlink() or not path.is_file():
-        raise BundleIntegrityError(f"bundle is missing {MANIFEST_NAME}")
-    try:
-        manifest = json.loads(path.read_text(encoding="utf-8"))
-    except ValueError as error:
-        raise BundleIntegrityError(f"{MANIFEST_NAME} is not valid JSON") from error
-    if not isinstance(manifest, dict):
-        raise BundleIntegrityError(f"{MANIFEST_NAME} must be a JSON object")
-    version = manifest.get("manifest_version")
-    if version != BUNDLE_MANIFEST_VERSION:
-        raise BundleIntegrityError(
-            f"unsupported bundle manifest version: {version!r}; "
-            f"this build understands {BUNDLE_MANIFEST_VERSION!r}"
-        )
-    if not isinstance(manifest.get("files"), dict):
-        raise BundleIntegrityError(f"{MANIFEST_NAME} has no files mapping")
-    return manifest
+    return _validate_manifest(_load_record(root, MANIFEST_NAME))
 
 
 def verify_manifest(bundle: str | Path, *, expected_digest: str | None = None) -> dict[str, Any]:
@@ -195,14 +226,18 @@ def verify_manifest(bundle: str | Path, *, expected_digest: str | None = None) -
     return manifest
 
 
-def _load_record(bundle: Path, name: str) -> Any:
+def _load_record(bundle: Path, name: str) -> dict[str, Any]:
     path = bundle / name
     if path.is_symlink() or not path.is_file():
         raise BundleIntegrityError(f"bundle is missing {name}")
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except ValueError as error:
-        raise BundleIntegrityError(f"{name} is not valid JSON") from error
+        value = json.loads(path.read_text(encoding="utf-8"),
+                           object_pairs_hook=_json_pairs, parse_constant=_json_constant)
+    except (OSError, ValueError, UnicodeError, RecursionError) as error:
+        raise BundleIntegrityError(f"{name} is not valid readable JSON") from error
+    if not isinstance(value, dict):
+        raise BundleIntegrityError(f"{name} must be a JSON object")
+    return value
 
 
 def verify_links(bundle: str | Path) -> dict[str, Any]:

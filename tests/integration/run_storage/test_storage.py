@@ -19,7 +19,12 @@ def identity() -> RunIdentity:
 def complete_records(bundle: object) -> None:
     bundle.write_text("recipe.yaml", "schema_version: '0.1'\n")
     bundle.write_json("resolved_recipe.json", {"resolved": True})
-    bundle.write_json("plan.json", {"accepted": True})
+    bundle.write_json("plan.json", {
+        "recipe_digest": bundle.identity.recipe_digest,
+        "plan_digest": bundle.identity.plan_digest,
+        "artifact_id": bundle.identity.artifact_id,
+    })
+    bundle.write_json("state-history.json", {"state": "SUCCEEDED"})
     bundle.write_json("provenance.json", {"python": "test"})
     bundle.write_json("results.json", {"quality": {"baseline": 1, "quantized": 1}})
 
