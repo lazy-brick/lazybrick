@@ -41,13 +41,13 @@ def test_capability_mismatch_rejected(field, value):
         ExecutionBinding.create(stage, replace(capability, **{field: value}), transport)
 
 
-def test_qualified_plugin_name_accepted_when_manifests_match():
+def test_qualified_capability_accepts_packaged_unqualified_transport():
     stage, capability, transport = inputs()
     qualified_name = f"lazy-brick/{stage.plugin}"
     binding = ExecutionBinding.create(
         replace(stage, plugin=qualified_name),
         replace(capability, name=qualified_name),
-        replace(transport, name=qualified_name),
+        transport,
     )
     assert binding.stage_digest != binding.capability_digest
 

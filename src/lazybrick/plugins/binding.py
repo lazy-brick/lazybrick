@@ -36,7 +36,8 @@ class ExecutionBinding:
         if transport.manifest_version != "0.2" or upstream is None:
             _reject("execution binding requires a v0.2 transport manifest")
         plugin_name = stage.plugin.rsplit("/", 1)[-1]
-        if capability.name not in {stage.plugin, plugin_name} or capability.name != transport.name:
+        accepted_names = {stage.plugin, plugin_name}
+        if capability.name not in accepted_names or transport.name not in accepted_names:
             _reject("stage, capability, and transport plugin names differ")
         if capability.kind != "transformation":
             _reject("stage requires a transformation capability")
