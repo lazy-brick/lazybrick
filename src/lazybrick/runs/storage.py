@@ -5,6 +5,7 @@ from __future__ import annotations
 from hashlib import sha256
 import json
 import os
+import stat
 from pathlib import Path
 import tempfile
 from typing import Any, Mapping
@@ -61,19 +62,84 @@ def _record_json(value: Mapping[str, Any]) -> bytes:
         raise RunStorageError("run record is not finite JSON") from error
 
 
+def _snapshot(info: os.stat_result) -> tuple[int, ...]:
+    # atime may change because we read the file. Identity and mutation fields
+    # must not change between inspection, opening, reading and name recheck.
+    return (info.st_dev, info.st_ino, info.st_mode, info.st_nlink,
+            info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+
+_DESCRIPTOR_WALK_SUPPORTED = (
+    hasattr(os, "O_NOFOLLOW") and hasattr(os, "O_DIRECTORY")
+    and hasattr(os, "O_NONBLOCK") and os.open in os.supports_dir_fd
+    and os.stat in os.supports_dir_fd and os.stat in os.supports_follow_symlinks
+    and os.listdir in os.supports_fd
+)
+
+
 def hash_files(root: str | Path) -> dict[str, str]:
+    """Hash descriptor-anchored regular files, rejecting observed replacement.
+
+    This is not a filesystem snapshot: callers must quiesce artifact writers.
+    No path-based fallback is safe on platforms lacking descriptor operations.
+    """
+    if not _DESCRIPTOR_WALK_SUPPORTED:
+        raise RunStorageError("safe artifact hashing requires descriptor-relative no-follow operations")
     base = Path(root)
+    try:
+        root_info = base.lstat()
+    except OSError as error:
+        raise RunStorageError("artifact root must be a real directory") from error
+    if not stat.S_ISDIR(root_info.st_mode):
+        raise RunStorageError("artifact root must be a real directory")
     result: dict[str, str] = {}
-    for path in sorted(base.rglob("*")):
-        if path.is_symlink():
-            raise RunStorageError(f"artifact must not contain symlinks: {path.relative_to(base)}")
-        if not path.is_file():
-            continue
-        digest = sha256()
-        with path.open("rb") as handle:
-            for block in iter(lambda: handle.read(1024 * 1024), b""):
-                digest.update(block)
-        result[path.relative_to(base).as_posix()] = digest.hexdigest()
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0)
+
+    def unchanged(before: os.stat_result, after: os.stat_result) -> None:
+        if _snapshot(before) != _snapshot(after):
+            raise RunStorageError("artifact entry changed while hashing")
+
+    def visit(name: str | Path, parent: int | None, info: os.stat_result,
+              relative: str) -> None:
+        is_directory = stat.S_ISDIR(info.st_mode)
+        if stat.S_ISLNK(info.st_mode):
+            raise RunStorageError(f"artifact must not contain symlinks: {relative}")
+        if not is_directory and not stat.S_ISREG(info.st_mode):
+            raise RunStorageError(f"artifact must contain only regular files: {relative}")
+        # NOFOLLOW closes the symlink race; NONBLOCK prevents a substituted
+        # FIFO from hanging open. Verify the actual descriptor before any read.
+        fd = os.open(name, flags | (os.O_DIRECTORY if is_directory else 0), dir_fd=parent)
+        try:
+            opened = os.fstat(fd)
+            unchanged(info, opened)
+            if is_directory:
+                for child in sorted(os.listdir(fd)):
+                    child_info = os.stat(child, dir_fd=fd, follow_symlinks=False)
+                    child_relative = f"{relative}/{child}" if relative else child
+                    visit(child, fd, child_info, child_relative)
+            else:
+                if not stat.S_ISREG(opened.st_mode):
+                    raise RunStorageError("opened artifact entry is not a regular file")
+                hasher = sha256()
+                # Bound reads to the inspected size, even if a writer appends
+                # continuously. Truncation/growth also fails the final fstat.
+                remaining = opened.st_size
+                while remaining:
+                    block = os.read(fd, min(1024 * 1024, remaining))
+                    if not block:
+                        raise RunStorageError("artifact entry truncated while hashing")
+                    hasher.update(block)
+                    remaining -= len(block)
+                result[relative] = hasher.hexdigest()
+            unchanged(opened, os.fstat(fd))
+            unchanged(opened, os.stat(name, dir_fd=parent, follow_symlinks=False))
+        finally:
+            os.close(fd)
+
+    try:
+        visit(base, None, root_info, "")
+    except OSError as error:
+        raise RunStorageError("artifact entry could not be safely opened or inspected") from error
     return result
 
 

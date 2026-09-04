@@ -139,3 +139,159 @@ def test_artifact_symlinks_are_rejected(tmp_path: Path) -> None:
 
     with pytest.raises(RunStorageError, match="symlinks"):
         hash_files(artifact)
+
+
+@pytest.mark.skipif(not hasattr(__import__("os"), "mkfifo"), reason="requires FIFO support")
+def test_hash_files_rejects_fifo_immediately(tmp_path):
+    import os
+    from lazybrick.runs.storage import hash_files
+    os.mkfifo(tmp_path / "pipe")
+    with pytest.raises(RunStorageError, match="only regular files"):
+        hash_files(tmp_path)
+
+
+def test_hash_files_rejects_symlinked_root(tmp_path):
+    from lazybrick.runs.storage import hash_files
+    target = tmp_path / "target"
+    target.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(target, target_is_directory=True)
+    with pytest.raises(RunStorageError, match="real directory"):
+        hash_files(link)
+
+
+def test_hash_files_rejects_missing_root(tmp_path):
+    from lazybrick.runs.storage import hash_files
+    with pytest.raises(RunStorageError, match="real directory"):
+        hash_files(tmp_path / "missing")
+
+
+@pytest.mark.parametrize("replacement", ["symlink", "fifo", "regular", "directory"])
+def test_entry_replacement_between_inspection_and_open_is_rejected(tmp_path, monkeypatch, replacement):
+    import os
+    import lazybrick.runs.storage as storage
+    root = tmp_path / "artifact"
+    root.mkdir()
+    victim = root / "weights"
+    victim.write_bytes(b"original")
+    outside = tmp_path / "outside"
+    outside.write_bytes(b"must never be read")
+    real_open, real_read = os.open, os.read
+    opened, reads = [], []
+    replaced = False
+
+    def swapping_open(name, flags, *args, **kwargs):
+        nonlocal replaced
+        if name == "weights":
+            assert flags & os.O_NOFOLLOW
+            assert flags & os.O_NONBLOCK  # a regression cannot hang on the FIFO
+            victim.rename(root / "retired")
+            if replacement == "symlink":
+                victim.symlink_to(outside)
+            elif replacement == "fifo":
+                os.mkfifo(victim)
+            elif replacement == "directory":
+                victim.mkdir()
+            else:
+                victim.write_bytes(b"replacement")
+            replaced = True
+        fd = real_open(name, flags, *args, **kwargs)
+        opened.append(fd)
+        return fd
+
+    def recording_read(fd, size):
+        reads.append(fd)
+        return real_read(fd, size)
+
+    monkeypatch.setattr(os, "open", swapping_open)
+    monkeypatch.setattr(os, "read", recording_read)
+    with pytest.raises(RunStorageError):
+        storage.hash_files(root)
+    assert replaced
+    assert not reads
+    for fd in opened:
+        with pytest.raises(OSError):
+            os.fstat(fd)
+
+
+@pytest.mark.parametrize("swap_at", ["directory_open", "file_open", "root_open"])
+def test_directory_replacement_cannot_redirect_descendant_reads(tmp_path, monkeypatch, swap_at):
+    import os
+    root = tmp_path / "artifact"
+    nested = root / "nested"
+    nested.mkdir(parents=True)
+    (nested / "weights").write_bytes(b"inside")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "weights").write_bytes(b"outside")
+    (outside / "nested").mkdir()
+    (outside / "nested" / "weights").write_bytes(b"outside")
+    real_open, real_read = os.open, os.read
+    replaced = False
+    reads = []
+
+    def swapping_open(name, flags, *args, **kwargs):
+        nonlocal replaced
+        trigger = {"directory_open":"nested", "file_open":"weights", "root_open":root}[swap_at]
+        if not replaced and name == trigger:
+            target = root if swap_at == "root_open" else nested
+            target.rename(tmp_path / "retired")
+            target.symlink_to(outside, target_is_directory=True)
+            replaced = True
+        return real_open(name, flags, *args, **kwargs)
+
+    def recording_read(fd, size):
+        block = real_read(fd, size)
+        reads.append(block)
+        return block
+
+    monkeypatch.setattr(os, "open", swapping_open)
+    monkeypatch.setattr(os, "read", recording_read)
+    with pytest.raises(RunStorageError):
+        hash_files(root)
+    assert replaced
+    assert b"outside" not in reads
+
+
+@pytest.mark.parametrize("mutation", ["replace", "append", "truncate"])
+def test_mutation_during_descriptor_read_is_rejected(tmp_path, monkeypatch, mutation):
+    import os
+    weight = tmp_path / "weights"
+    weight.write_bytes(b"original")
+    real_read = os.read
+    changed = False
+    def changing_read(fd, size):
+        nonlocal changed
+        block = real_read(fd, size)
+        if not changed:
+            if mutation == "replace":
+                weight.rename(tmp_path / "retired")
+                weight.write_bytes(b"different")
+            elif mutation == "append":
+                with weight.open("ab") as handle:
+                    handle.write(b"additional")
+            else:
+                weight.write_bytes(b"")
+            changed = True
+        return block
+    monkeypatch.setattr(os, "read", changing_read)
+    with pytest.raises(RunStorageError, match="changed"):
+        hash_files(tmp_path)
+    assert changed
+
+
+def test_safe_hashing_requires_descriptor_support(tmp_path, monkeypatch):
+    import lazybrick.runs.storage as storage
+    monkeypatch.setattr(storage, "_DESCRIPTOR_WALK_SUPPORTED", False)
+    with pytest.raises(RunStorageError, match="requires descriptor"):
+        hash_files(tmp_path)
+
+
+def test_nested_files_and_empty_files_keep_byte_hashes(tmp_path):
+    from hashlib import sha256
+    (tmp_path / "nested").mkdir()
+    (tmp_path / "nested" / "weights").write_bytes(b"unchanged")
+    (tmp_path / "empty").touch()
+    assert hash_files(tmp_path) == {
+        "empty": sha256(b"").hexdigest(), "nested/weights": sha256(b"unchanged").hexdigest(),
+    }
