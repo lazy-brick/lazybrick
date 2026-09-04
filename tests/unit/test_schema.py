@@ -45,7 +45,7 @@ class TestSchemaVersion:
         assert paths(valid_recipe) == ["schema_version"]
 
     def test_unknown_version_is_rejected(self, valid_recipe) -> None:
-        valid_recipe["schema_version"] = "0.2"
+        valid_recipe["schema_version"] = "0.3"
 
         assert codes(valid_recipe) == ["unknown_schema_version"]
 

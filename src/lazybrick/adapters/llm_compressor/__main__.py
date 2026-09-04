@@ -33,6 +33,10 @@ def _response(request: dict[str, Any], *, result: dict[str, Any] | None = None, 
 def handle(request: dict[str, Any]) -> dict[str, Any]:
     operation = request.get("operation")
     payload = request.get("payload", {})
+    if not isinstance(payload, dict):
+        raise AdapterInputError("payload must be an object")
+    if "semantics" in payload:
+        raise AdapterInputError("unsupported semantic profile: AWQ numerical mapping has not been verified")
     if operation == "inspect":
         return _response(
             request,

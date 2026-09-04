@@ -23,3 +23,10 @@ project state rather than a speculative implementation roadmap.
 
 Behavior changes must update the relevant contract page, tests, examples, and
 compatibility or migration notes in the same pull request.
+
+## Proposed numerical semantics
+
+- [Supplied-parameter affine U4/group-128/binary32 profile](semantics/affine-u4-g128-f32-v1.md)
+- [Scoped conformance reports and verification](semantics/conformance.md)
+
+These CPU contracts do not establish AWQ adapter support or hardware evidence.
