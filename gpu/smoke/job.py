@@ -319,7 +319,10 @@ def execute(repo_root: Path, work_root: Path) -> Path:
     plan = _run_plan(recipe_path, target_path, plugin_manifest_path, logs)
     recipe_digest, plan_digest, planned_artifact_id, resolved_recipe = require_plan_fields(plan)
 
-    stages = resolved_recipe.get("stages")
+    if resolved_recipe.get("resolved_recipe_version") != "0.1":
+        raise SmokeJobError("unsupported resolved recipe envelope")
+    recipe_body = resolved_recipe.get("recipe")
+    stages = recipe_body.get("stages") if isinstance(recipe_body, Mapping) else None
     if not isinstance(stages, list) or len(stages) != 1:
         raise SmokeJobError("smoke execution requires exactly one planned stage")
     transport = load_manifest(repo_root / "src/lazybrick/adapters/llm_compressor/plugin-manifest.json")

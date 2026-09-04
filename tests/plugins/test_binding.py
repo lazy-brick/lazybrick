@@ -81,3 +81,33 @@ def test_installed_upstream_version_must_match(tmp_path, monkeypatch):
     monkeypatch.setattr("lazybrick.plugins.binding.version", lambda package:"9.9")
     with pytest.raises(PluginError, match="upstream package version differs"):
         binding.validate_payload(transport, {"settings": dict(stage.parameters)})
+
+
+def test_semantic_declarations_cannot_bypass_mapping_gate():
+    from types import SimpleNamespace
+    stage, capability, transport = inputs()
+    with pytest.raises(PluginError, match="tested adapter mapping"):
+        ExecutionBinding.create(SimpleNamespace(semantics={"profile":"unmapped"}), capability, transport)
+    binding = ExecutionBinding.create(stage, capability, transport)
+    with pytest.raises(PluginError, match="tested adapter mapping"):
+        binding.validate_payload(transport, {"settings":dict(stage.parameters), "semantics":None})
+
+
+def test_smoke_reads_the_actual_resolved_recipe_envelope(tmp_path, monkeypatch):
+    import importlib.util
+    from types import SimpleNamespace
+    spec = importlib.util.spec_from_file_location("binding_smoke_test", ROOT / "gpu/smoke/job.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    stage, capability, transport = inputs()
+    monkeypatch.setattr(module.sys, "platform", "linux")
+    monkeypatch.setattr(module.shutil, "which", lambda value: "nvidia-smi")
+    monkeypatch.setitem(sys.modules, "torch", SimpleNamespace(cuda=SimpleNamespace(is_available=lambda:True, device_count=lambda:1)))
+    monkeypatch.setattr(module, "_hardware_profile", lambda path:path)
+    envelope = {"resolved_recipe_version":"0.1", "recipe":{"stages":[stage.to_json()]}}
+    monkeypatch.setattr(module, "_run_plan", lambda *args:{"recipe_digest":"a"*64,"plan_digest":"b"*64,"artifact_id":"c"*64,"resolved_recipe":envelope,"compatibility":{"accepted":True}})
+    def reached_download(path):
+        raise RuntimeError("binding passed before download")
+    monkeypatch.setattr(module,"_download_model",reached_download)
+    with pytest.raises(RuntimeError,match="binding passed before download"):
+        module.execute(ROOT,tmp_path/"run")

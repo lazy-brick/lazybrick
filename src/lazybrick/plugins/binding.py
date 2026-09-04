@@ -30,6 +30,8 @@ class ExecutionBinding:
     @classmethod
     def create(cls, stage: StageSpec, capability: CapabilityManifest,
                transport: PluginManifest) -> ExecutionBinding:
+        if getattr(stage, "semantics", None) is not None:
+            _reject("numerical semantics requires a tested adapter mapping")
         upstream = transport.upstream
         if transport.manifest_version != "0.2" or upstream is None:
             _reject("execution binding requires a v0.2 transport manifest")
@@ -67,6 +69,8 @@ class ExecutionBinding:
             _reject("effective interpreter or command changed after binding")
 
     def validate_payload(self, transport: PluginManifest, payload: dict[str, object]) -> None:
+        if "semantics" in payload:
+            _reject("numerical semantics requires a tested adapter mapping")
         if digest(payload.get("settings")) != self.settings_digest:
             _reject("execution settings differ from the planned stage")
         try:
