@@ -84,3 +84,7 @@ not be allowed to blur them.
 Raw, non-identity run logs may contain finite JSON numbers for direct analysis.
 They are not canonical identity inputs; a value promoted into a digested public
 record must use the decimal-string contract above.
+
+Artifact hashing also rejects non-regular entries immediately, before writing an
+artifact inventory. Directory traversal is allowed, but the artifact root must be
+a real directory and no symlink, FIFO, socket, or device may be omitted silently.

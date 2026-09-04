@@ -5,6 +5,7 @@ from __future__ import annotations
 from hashlib import sha256
 import json
 import os
+import stat
 from pathlib import Path
 import tempfile
 from typing import Any, Mapping
@@ -63,12 +64,19 @@ def _record_json(value: Mapping[str, Any]) -> bytes:
 
 def hash_files(root: str | Path) -> dict[str, str]:
     base = Path(root)
+    if base.is_symlink() or not base.is_dir():
+        raise RunStorageError("artifact root must be a real directory")
     result: dict[str, str] = {}
     for path in sorted(base.rglob("*")):
         if path.is_symlink():
             raise RunStorageError(f"artifact must not contain symlinks: {path.relative_to(base)}")
-        if not path.is_file():
+        mode = path.lstat().st_mode
+        if stat.S_ISDIR(mode):
             continue
+        if not stat.S_ISREG(mode):
+            raise RunStorageError(
+                f"artifact must contain only regular files: {path.relative_to(base)}"
+            )
         digest = sha256()
         with path.open("rb") as handle:
             for block in iter(lambda: handle.read(1024 * 1024), b""):

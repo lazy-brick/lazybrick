@@ -139,3 +139,28 @@ def test_artifact_symlinks_are_rejected(tmp_path: Path) -> None:
 
     with pytest.raises(RunStorageError, match="symlinks"):
         hash_files(artifact)
+
+
+@pytest.mark.skipif(not hasattr(__import__("os"), "mkfifo"), reason="requires FIFO support")
+def test_hash_files_rejects_fifo_immediately(tmp_path):
+    import os
+    from lazybrick.runs.storage import hash_files
+    os.mkfifo(tmp_path / "pipe")
+    with pytest.raises(RunStorageError, match="only regular files"):
+        hash_files(tmp_path)
+
+
+def test_hash_files_rejects_symlinked_root(tmp_path):
+    from lazybrick.runs.storage import hash_files
+    target = tmp_path / "target"
+    target.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(target, target_is_directory=True)
+    with pytest.raises(RunStorageError, match="real directory"):
+        hash_files(link)
+
+
+def test_hash_files_rejects_missing_root(tmp_path):
+    from lazybrick.runs.storage import hash_files
+    with pytest.raises(RunStorageError, match="real directory"):
+        hash_files(tmp_path / "missing")
