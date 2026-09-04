@@ -236,6 +236,14 @@ class ImplementationRef:
 # --------------------------------------------------------------------------
 
 
+def _validated_semantics(value: object) -> dict[str, str]:
+    from lazybrick.semantics.profile import validate_semantics, SemanticError
+    try:
+        return validate_semantics(value)
+    except SemanticError as error:
+        raise RecipeValidationError([ValidationIssue("semantics", error.code, str(error))]) from error
+
+
 @dataclass(frozen=True, slots=True)
 class StageSpec:
     """One transformation step."""
@@ -245,6 +253,7 @@ class StageSpec:
     plugin_version: str
     implementation: ImplementationRef
     parameters: Mapping[str, Any] = field(default_factory=dict)
+    semantics: Mapping[str, str] | None = None
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -253,6 +262,7 @@ class StageSpec:
             "plugin_version": self.plugin_version,
             "implementation": self.implementation.to_json(),
             "parameters": dict(self.parameters),
+            **({"semantics": _validated_semantics(self.semantics)} if self.semantics is not None else {}),
         }
 
     @classmethod
@@ -265,6 +275,7 @@ class StageSpec:
                 _require(data, "implementation", path), f"{path}.implementation"
             ),
             parameters=dict(data.get("parameters") or {}),
+            semantics=_validated_semantics(data["semantics"]) if "semantics" in data else None,
         )
 
 
@@ -511,6 +522,20 @@ class ExecutionPlan:
     evaluation: EvalSpec | None = None
     plan_version: str = PLAN_VERSION
 
+    def __post_init__(self) -> None:
+        if self.plan_version not in {"0.1", "0.2"}:
+            raise RecipeValidationError([ValidationIssue("plan_version", "unknown_plan_version", "unsupported plan version")])
+        if self.plan_version == "0.1" and any(stage.semantics is not None for stage in self.stages):
+            raise RecipeValidationError([ValidationIssue("stages", "semantic_version_mismatch", "stage semantics requires plan v0.2")])
+
+    @property
+    def semantic_digest(self) -> str | None:
+        if not any(stage.semantics is not None for stage in self.stages):
+            return None
+        return digest({"semantic_recipe_version":"1", "stages":[
+            {"id":stage.id, "semantics":_validated_semantics(stage.semantics) if stage.semantics is not None else None}
+            for stage in self.stages]})
+
     def to_json(self) -> dict[str, Any]:
         result: dict[str, Any] = {
             "plan_version": self.plan_version,
@@ -565,6 +590,7 @@ class ExecutionPlan:
         evaluation = recipe.get("evaluation")
         return cls(
             recipe_digest=recipe_digest,
+            plan_version=recipe["schema_version"],
             model=ModelRef.from_json(recipe["model"]),
             stages=tuple(
                 StageSpec.from_json(stage, f"stages[{index}]")

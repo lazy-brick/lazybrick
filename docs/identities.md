@@ -84,3 +84,13 @@ not be allowed to blur them.
 Raw, non-identity run logs may contain finite JSON numbers for direct analysis.
 They are not canonical identity inputs; a value promoted into a digested public
 record must use the decimal-string contract above.
+
+
+## Numerical semantic identity (opt-in v0.2)
+
+A profile digest hashes the immutable numerical descriptor only. A plan's
+`semantic_digest` hashes the ordered stage IDs and their semantic declarations,
+including explicit unspecified stages, independently of implementation pins.
+It is not a recipe, build-input, output-byte, or evidence identity. Stage
+semantics also participate in v0.2 plan/build-input hashes. v0.1 serialization
+and every existing golden digest are deliberately unchanged.
