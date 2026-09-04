@@ -1,5 +1,5 @@
 {
-  "manifest_version": "0.1",
+  "manifest_version": "0.2",
   "plugin_api_version": "0.1",
   "name": "lazybrick.llm-compressor-awq",
   "package": "lazybrick",
@@ -8,13 +8,30 @@
     "source": "https://github.com/lazy-brick/lazybrick",
     "commit": "202cb4cd10da3eb5ab69113c358b22b0a8f5d019"
   },
-  "command": ["python", "-m", "lazybrick.adapters.llm_compressor"],
-  "operations": ["inspect", "plan", "execute", "validate"],
+  "command": [
+    "python",
+    "-m",
+    "lazybrick.adapters.llm_compressor"
+  ],
+  "operations": [
+    "inspect",
+    "plan",
+    "execute",
+    "validate"
+  ],
   "runtime_dependencies": [
     "compressed-tensors",
     "datasets",
     "llmcompressor",
     "torch",
     "transformers"
-  ]
+  ],
+  "upstream": {
+    "version": "0.13.0",
+    "implementation": {
+      "git": "https://github.com/vllm-project/llm-compressor",
+      "commit": "de46bfd53513aa87571a8b056a06aeaa5da1c69c"
+    },
+    "package": "llmcompressor"
+  }
 }
