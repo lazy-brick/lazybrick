@@ -98,3 +98,17 @@ from the stages themselves, independently of whether an identity exists.
 It is not a recipe, build-input, output-byte, or evidence identity. Stage
 semantics also participate in v0.2 plan/build-input hashes. v0.1 serialization
 and every existing golden digest are deliberately unchanged.
+Artifact hashing also rejects non-regular entries immediately, before writing an
+artifact inventory. Directory traversal is allowed, but the artifact root must be
+a real directory and no symlink, FIFO, socket, or device may be omitted silently.
+
+Artifact hashing walks opened directory descriptors and opens each child with
+no-follow and nonblocking flags. It compares the inspected inode/type with the
+opened descriptor before reading, rechecks metadata and directory entries after
+reading, and bounds reads to the inspected size. Symlink, FIFO, directory, or
+regular-file replacement cannot redirect hashing through an unchecked path.
+Platforms without the required descriptor-relative/no-follow operations fail
+closed; there is no path-based fallback. Linux and macOS support this path.
+These checks detect observed mutation; they are not an atomic filesystem
+snapshot. Artifact writers must be stopped before finalization, and completed
+bundles must still pass the independent integrity/publication gate.
