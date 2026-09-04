@@ -530,7 +530,7 @@ class ExecutionPlan:
 
     @property
     def semantic_digest(self) -> str | None:
-        if not any(stage.semantics is not None for stage in self.stages):
+        if self.plan_version == "0.1":
             return None
         return digest({"semantic_recipe_version":"1", "stages":[
             {"id":stage.id, "semantics":_validated_semantics(stage.semantics) if stage.semantics is not None else None}

@@ -274,3 +274,29 @@ class TestBuild:
             "dry_run": True,
             "would_build": True,
         }
+
+
+@pytest.mark.parametrize("declared", [False, True])
+def test_v02_semantic_identity_does_not_imply_declaration(
+    valid_recipe, primed_cache, tmp_path, capsys, declared,
+):
+    from lazybrick.semantics.profile import PROFILE_ID, profile_digest
+    valid_recipe["schema_version"] = "0.2"
+    if declared:
+        valid_recipe["stages"][0]["semantics"] = {
+            "profile": PROFILE_ID, "profile_digest": profile_digest(),
+        }
+    path = tmp_path / "v02.yaml"
+    path.write_text(yaml.safe_dump(valid_recipe))
+    argv = ["plan", str(path), "--target", str(A100), "--plugin-manifest", str(MANIFEST),
+            "--offline", "--cache-dir", str(primed_cache)]
+    expected_status = "declared" if declared else "unspecified"
+    expected_exit = INCOMPATIBLE if declared else OK
+    assert run(*argv, "--json") == expected_exit
+    payload = json.loads(capsys.readouterr().out)
+    assert len(payload["semantic_digest"]) == 64
+    assert payload["semantic_status"] == expected_status
+    assert run(*argv) == expected_exit
+    text = capsys.readouterr().out
+    assert payload["semantic_digest"] in text
+    assert f"({expected_status}; not conformance evidence)" in text

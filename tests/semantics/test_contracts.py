@@ -45,3 +45,31 @@ def test_adapter_rejects_explicit_semantics_before_importing_optional_stack():
     from lazybrick.adapters.llm_compressor.adapter import AdapterInputError
     with pytest.raises(AdapterInputError,match="not been verified"):
         handle({"operation":"execute","payload":{"semantics":declaration()}})
+
+
+def test_unspecified_v02_stages_have_ordered_semantic_identity(valid_recipe):
+    from lazybrick.canonical import digest
+    valid_recipe["schema_version"] = "0.2"
+    second = deepcopy(valid_recipe["stages"][0])
+    second["id"] = "second"
+    valid_recipe["stages"].append(second)
+    def plan(recipe):
+        validate_recipe(recipe)
+        return ExecutionPlan.from_recipe(recipe, recipe_digest(recipe))
+    original = plan(valid_recipe)
+    expected = digest({"semantic_recipe_version":"1", "stages":[
+        {"id":stage["id"],"semantics":None} for stage in valid_recipe["stages"]]})
+    assert original.semantic_digest == expected
+    assert ExecutionPlan.from_json(original.to_json()).semantic_digest == expected
+    renamed = deepcopy(valid_recipe)
+    renamed["stages"][0]["id"] = "renamed"
+    assert plan(renamed).semantic_digest != expected
+    reordered = deepcopy(valid_recipe)
+    reordered["stages"].reverse()
+    assert plan(reordered).semantic_digest != expected
+    implemented = deepcopy(valid_recipe)
+    implemented["stages"][0]["implementation"]["commit"] = "e" * 40
+    assert plan(implemented).semantic_digest == expected
+    declared = deepcopy(valid_recipe)
+    declared["stages"][0]["semantics"] = declaration()
+    assert plan(declared).semantic_digest != expected

@@ -91,6 +91,10 @@ record must use the decimal-string contract above.
 A profile digest hashes the immutable numerical descriptor only. A plan's
 `semantic_digest` hashes the ordered stage IDs and their semantic declarations,
 including explicit unspecified stages, independently of implementation pins.
+Every v0.2 plan has this digest, even when all declarations are unspecified;
+stage order, IDs and absent declarations remain part of that identity. Only
+legacy v0.1 plans return no semantic digest. The CLI derives declaration status
+from the stages themselves, independently of whether an identity exists.
 It is not a recipe, build-input, output-byte, or evidence identity. Stage
 semantics also participate in v0.2 plan/build-input hashes. v0.1 serialization
 and every existing golden digest are deliberately unchanged.

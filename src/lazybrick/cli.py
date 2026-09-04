@@ -250,7 +250,7 @@ def _cmd_plan(args: argparse.Namespace) -> int:
                 "plan": plan.to_json(),
                 "compatibility": result.to_json(),
                 **({"semantic_digest": plan.semantic_digest,
-                    "semantic_status": "declared" if plan.semantic_digest else "unspecified"}
+                    "semantic_status": "declared" if any(stage.semantics is not None for stage in plan.stages) else "unspecified"}
                    if plan.plan_version == "0.2" else {}),
             }
         )
@@ -263,7 +263,8 @@ def _cmd_plan(args: argparse.Namespace) -> int:
     print(f"plan_digest    {plan.plan_digest}")
     print(f"artifact_id    {plan.artifact_id}")
     if plan.plan_version == "0.2":
-        print(f"semantics      {plan.semantic_digest or 'unspecified'} (not conformance evidence)")
+        status = "declared" if any(stage.semantics is not None for stage in plan.stages) else "unspecified"
+        print(f"semantics      {plan.semantic_digest} ({status}; not conformance evidence)")
     print()
     if result.accepted:
         print("ACCEPTED: every capability intersection is non-empty.")
