@@ -10,6 +10,12 @@ from pathlib import Path
 import tempfile
 from typing import Any, Mapping
 
+from lazybrick.runs.bundle import (
+    BundleIntegrityError,
+    bundle_digest,
+    read_manifest,
+    write_manifest,
+)
 from lazybrick.runs.identity import RunIdentity, canonical_json
 from lazybrick.runs.state import FAILURE_STATES, RunState
 
@@ -215,26 +221,18 @@ class AttemptBundle:
         self.write_json("artifact.json", complete_artifact)
         self._require_records()
         self.write_json("status.json", {"state": "SUCCEEDED"})
+        # Last write before promotion: the manifest must cover every other record.
+        write_manifest(self.staging)
         destination = self._promote_attempt()
-        artifact_index = (
-            self.store.root
-            / "artifacts"
-            / self.identity.artifact_id
-            / f"{self.identity.attempt_id}.json"
-        )
-        _atomic_bytes(
-            artifact_index,
-            canonical_json(
-                {
-                    "artifact_id": self.identity.artifact_id,
-                    "run_id": self.identity.run_id,
-                    "attempt_id": self.identity.attempt_id,
-                    "bundle": str(destination.relative_to(self.store.root)),
-                    "files": hashes,
-                }
-            )
-            + b"\n",
-        )
+        # Promotion succeeded, so the bundle is real evidence even if indexing
+        # now fails. Report that precisely instead of losing the bundle.
+        try:
+            self.store.index_attempt(destination)
+        except (OSError, ValueError, BundleIntegrityError) as error:
+            raise RunStorageError(
+                f"attempt {self.identity.attempt_id} was promoted but could not be "
+                f"indexed: {error}; re-run RunStore.reindex() to repair the index"
+            ) from error
         return destination
 
     def finalize_failure(self, state: str, failure: Mapping[str, Any]) -> Path:
@@ -251,6 +249,9 @@ class AttemptBundle:
         self.write_json(
             "status.json", {"state": run_state.value, "failure": dict(failure)}
         )
+        # Failed attempts are evidence too: a doctored failure must not be
+        # promotable into an apparently successful record.
+        write_manifest(self.staging)
         return self._promote_attempt()
 
     def _require_records(self) -> None:
@@ -279,6 +280,57 @@ class RunStore:
         (self.root / ".staging").mkdir(parents=True, exist_ok=True)
         (self.root / "runs").mkdir(exist_ok=True)
         (self.root / "artifacts").mkdir(exist_ok=True)
+
+    def index_attempt(self, bundle: Path) -> Path | None:
+        """Write the artifact index entry for a promoted successful bundle.
+
+        Idempotent: the entry is derived entirely from the bundle on disk, so
+        repeating it after a partial failure rewrites the same bytes. Returns
+        ``None`` for a bundle that did not succeed, which is not indexed.
+        """
+
+        status = json.loads((bundle / "status.json").read_text(encoding="utf-8"))
+        if status.get("state") != RunState.SUCCEEDED.value:
+            return None
+        identity = json.loads((bundle / "identity.json").read_text(encoding="utf-8"))
+        artifact = json.loads((bundle / "artifact.json").read_text(encoding="utf-8"))
+        entry = (
+            self.root
+            / "artifacts"
+            / identity["artifact_id"]
+            / f"{identity['attempt_id']}.json"
+        )
+        _atomic_bytes(
+            entry,
+            canonical_json(
+                {
+                    "artifact_id": identity["artifact_id"],
+                    "run_id": identity["run_id"],
+                    "attempt_id": identity["attempt_id"],
+                    "bundle": bundle.relative_to(self.root).as_posix(),
+                    "bundle_digest": bundle_digest(read_manifest(bundle)),
+                    "files": artifact["files"],
+                }
+            )
+            + b"\n",
+        )
+        return entry
+
+    def reindex(self) -> list[Path]:
+        """Rebuild artifact index entries for every promoted successful bundle.
+
+        Repairs the window where an attempt was promoted but its index write
+        failed. Safe to run at any time.
+        """
+
+        written: list[Path] = []
+        for bundle in sorted((self.root / "runs").glob("*/attempts/*")):
+            if not bundle.is_dir() or bundle.is_symlink():
+                continue
+            entry = self.index_attempt(bundle)
+            if entry is not None:
+                written.append(entry)
+        return written
 
     def begin(self, identity: RunIdentity) -> AttemptBundle:
         for name, value in (
