@@ -1,8 +1,10 @@
 from copy import deepcopy
 import json
+import sys
 import pytest
 from lazybrick.canonical import digest
 from lazybrick.cli import main
+from lazybrick.runs import RunIdentity, RunStore
 from lazybrick.semantics.conformance import reference_report, verify_report, context_for, run_conformance, verify_bundle_conformance
 from lazybrick.semantics.profile import SemanticError
 
@@ -66,7 +68,8 @@ def test_bundle_requires_external_integrity_anchor(tmp_path):
             expected_report_digest="a"*64, expected_context={})
 
 
-def test_bundle_integration_refuses_missing_integrity_layer(tmp_path):
+def test_bundle_integration_refuses_missing_integrity_layer(tmp_path, monkeypatch):
+    monkeypatch.setitem(sys.modules, "lazybrick.runs.bundle", None)
     with pytest.raises(SemanticError,match="integrity verifier"):
         verify_bundle_conformance(tmp_path,expected_bundle_digest="a"*64,expected_report_digest="b"*64,expected_context={})
 
@@ -118,3 +121,64 @@ def test_bundle_binding_after_integrity_gate(tmp_path, monkeypatch):
         raise ValueError("integrity gate rejected")
     dependency.verify_bundle = reject
     with pytest.raises(ValueError, match="integrity gate rejected"): check()
+
+
+def test_real_bundle_conformance_integration(tmp_path):
+    from lazybrick.semantics.profile import PROFILE_ID, profile_digest
+    from lazybrick.semantics.reference import evaluate
+
+    identity = RunIdentity.create(
+        recipe_digest="a" * 64,
+        plan_digest="b" * 64,
+        artifact_id="c" * 64,
+    )
+    stage = {
+        "id": "quantize",
+        "semantics": {
+            "profile": PROFILE_ID,
+            "profile_digest": profile_digest(),
+        },
+    }
+    binding = {
+        "identity": identity.to_dict(),
+        "stage_id": stage["id"],
+        "stage_digest": digest(stage),
+    }
+    reference = reference_report()
+    report = run_conformance(
+        evaluate,
+        implementation=reference["implementation"],
+        environment=reference["environment"],
+        binding=binding,
+    )
+
+    store = RunStore(tmp_path)
+    attempt = store.begin(identity)
+    attempt.write_text("recipe.yaml", "schema_version: '0.2'\n")
+    attempt.write_json("resolved_recipe.json", {"schema_version": "0.2"})
+    attempt.write_json(
+        "plan.json",
+        {
+            "recipe_digest": identity.recipe_digest,
+            "plan_digest": identity.plan_digest,
+            "artifact_id": identity.artifact_id,
+            "plan": {"stages": [stage]},
+        },
+    )
+    attempt.write_json("provenance.json", {"tool": "test"})
+    attempt.write_json("results.json", {"quality": {"baseline": 1, "quantized": 1}})
+    attempt.write_json("state-history.json", {"state": "SUCCEEDED"})
+    attempt.write_json("conformance.json", report)
+    (attempt.artifact_dir / "model.safetensors").write_bytes(b"weights")
+    bundle = attempt.finalize_success({"format": "compressed-tensors"})
+
+    index_path = next((tmp_path / "artifacts").glob("*/*.json"))
+    expected_bundle_digest = json.loads(index_path.read_text())["bundle_digest"]
+    verified = verify_bundle_conformance(
+        bundle,
+        expected_bundle_digest=expected_bundle_digest,
+        expected_report_digest=digest(report),
+        expected_context=context_for(report),
+    )
+
+    assert verified["status"] == "passed"
