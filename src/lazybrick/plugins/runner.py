@@ -9,7 +9,10 @@ import os
 from pathlib import Path
 import subprocess
 import time
-from typing import Mapping
+from typing import Mapping, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from lazybrick.plugins.binding import ExecutionBinding
 
 from lazybrick.plugins.errors import PluginError, PluginFailure
 from lazybrick.plugins.manifest import PluginManifest
@@ -28,9 +31,11 @@ class PluginInvocation:
     stdout: str
     stderr: str
     returncode: int
+    binding: dict[str, object] | None = None
 
     def provenance(self) -> dict[str, object]:
         return {
+            **({"execution_binding": self.binding} if self.binding is not None else {}),
             "plugin": {
                 "name": self.manifest.name,
                 "package": self.manifest.package,
@@ -95,6 +100,7 @@ class PluginRunner:
         output_dir: str | Path,
         payload: dict[str, object] | None = None,
         environment: Mapping[str, str] | None = None,
+        binding: ExecutionBinding | None = None,
     ) -> PluginRunResult:
         if operation not in self.manifest.operations:
             raise PluginError(
@@ -103,6 +109,12 @@ class PluginRunner:
                     f"plugin {self.manifest.name} does not support {operation}",
                 )
             )
+        if self.manifest.manifest_version == "0.2" and binding is None:
+            raise PluginError(PluginFailure("plugin_binding_required", "v0.2 requires an execution binding"))
+        if binding is not None:
+            binding.validate_transport(self.manifest)
+            if operation == "execute":
+                binding.validate_payload(self.manifest, dict(payload or {}))
         input_path = Path(input_dir).resolve()
         output_path = Path(output_dir).resolve()
         if not input_path.is_dir():
@@ -116,7 +128,7 @@ class PluginRunner:
             output_dir=str(output_path),
             payload=dict(payload or {}),
         )
-        command = self.manifest.command
+        command = binding.command if binding is not None else self.manifest.command
         started = time.monotonic()
         try:
             completed = subprocess.run(
@@ -161,6 +173,7 @@ class PluginRunner:
             stdout=completed.stdout,
             stderr=completed.stderr,
             returncode=completed.returncode,
+            binding=binding.to_dict() if binding is not None else None,
         )
         if completed.returncode != 0:
             raise PluginError(

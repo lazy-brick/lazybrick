@@ -1,5 +1,19 @@
 """Run identities, provenance, hashing, and immutable storage."""
 
+from lazybrick.runs.bundle import (
+    BUNDLE_MANIFEST_VERSION,
+    COMMON_RECORDS,
+    MANIFEST_NAME,
+    SUCCESS_RECORDS,
+    BundleIntegrityError,
+    build_manifest,
+    bundle_digest,
+    read_manifest,
+    verify_bundle,
+    verify_links,
+    verify_manifest,
+    write_manifest,
+)
 from lazybrick.runs.identity import (
     IdentityError,
     RunIdentity,
@@ -25,6 +39,11 @@ from lazybrick.runs.state import (
 
 __all__ = [
     "AttemptBundle",
+    "BUNDLE_MANIFEST_VERSION",
+    "BundleIntegrityError",
+    "COMMON_RECORDS",
+    "MANIFEST_NAME",
+    "SUCCESS_RECORDS",
     "IdentityError",
     "InvalidStateTransition",
     "FAILURE_STATES",
@@ -36,9 +55,16 @@ __all__ = [
     "StateEvent",
     "TERMINAL_STATES",
     "artifact_id",
+    "build_manifest",
+    "bundle_digest",
     "canonical_json",
     "collect_provenance",
     "hash_files",
+    "read_manifest",
     "redact_environment",
+    "verify_bundle",
     "verify_hashes",
+    "verify_links",
+    "verify_manifest",
+    "write_manifest",
 ]

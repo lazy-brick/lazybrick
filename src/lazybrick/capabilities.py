@@ -355,6 +355,9 @@ def check_compatibility(
 
     # -- per stage -----------------------------------------------------------
     for index, stage in enumerate(plan.stages):
+        if stage.semantics is not None:
+            rejections.add(Reason(code="unsupported_semantic_profile", subject=f"stages[{index}]",
+                detail="no model adapter has a tested mapping to the requested numerical profile; W4A16 alone is insufficient"))
         plugin_name = stage.plugin.rsplit("/", 1)[-1]
         manifest = plugins.get(plugin_name) or plugins.get(stage.plugin)
         if manifest is None:

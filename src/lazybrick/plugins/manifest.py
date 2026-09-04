@@ -87,6 +87,7 @@ class PluginManifest:
     runtime_dependencies: tuple[str, ...]
     manifest_version: str = PLUGIN_MANIFEST_VERSION
     plugin_api_version: str = PLUGIN_API_VERSION
+    upstream: dict[str, Any] | None = None
 
     @classmethod
     def from_dict(cls, value: object) -> PluginManifest:
@@ -103,6 +104,8 @@ class PluginManifest:
             "operations",
             "runtime_dependencies",
         }
+        if value.get("manifest_version") == "0.2":
+            allowed.add("upstream")
         unknown = set(value) - allowed
         if unknown:
             raise _fail(
@@ -116,7 +119,7 @@ class PluginManifest:
                 raise _fail("invalid_plugin_manifest", f"{field} must be a non-empty string")
 
         manifest_version = value.get("manifest_version")
-        if manifest_version != PLUGIN_MANIFEST_VERSION:
+        if manifest_version not in {PLUGIN_MANIFEST_VERSION, "0.2"}:
             raise _fail(
                 "incompatible_manifest_version",
                 f"manifest version {manifest_version!r} is unsupported",
@@ -159,7 +162,24 @@ class PluginManifest:
                 "invalid_plugin_manifest",
                 "runtime_dependencies must be a string list",
             )
+        upstream = value.get("upstream")
+        if manifest_version == "0.2":
+            from lazybrick.records import ImplementationRef as UpstreamRef
+            if not isinstance(upstream, dict) or set(upstream) != {"package", "version", "implementation"}:
+                raise _fail("invalid_plugin_manifest", "v0.2 requires upstream version and implementation")
+            if not isinstance(upstream["package"], str) or not upstream["package"].strip():
+                raise _fail("invalid_plugin_manifest", "upstream package is required")
+            if not isinstance(upstream["version"], str) or not upstream["version"].strip():
+                raise _fail("invalid_plugin_manifest", "upstream version is required")
+            try:
+                implementation = UpstreamRef.from_json(upstream["implementation"])
+                if not implementation.is_pinned:
+                    raise ValueError("upstream implementation is mutable")
+            except Exception as error:
+                raise _fail("invalid_plugin_manifest", "invalid upstream implementation") from error
+            upstream = {"package": upstream["package"], "version": upstream["version"], "implementation": implementation.to_json()}
         return cls(
+            upstream=upstream,
             name=value["name"],
             package=value["package"],
             package_version=value["package_version"],
@@ -173,6 +193,7 @@ class PluginManifest:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            **({"upstream": self.upstream} if self.upstream is not None else {}),
             "manifest_version": self.manifest_version,
             "plugin_api_version": self.plugin_api_version,
             "name": self.name,
