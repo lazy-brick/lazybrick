@@ -8,6 +8,9 @@ import json
 from pathlib import Path
 from typing import Any
 
+from lazybrick.evidence.assistant_quality import measure_assistant_loss
+from lazybrick.evidence.resources import ProcessTreeResources
+
 from lazybrick.evidence import (
     BenchmarkProtocol,
     GenerationProtocol,
@@ -39,7 +42,11 @@ def execute(config: dict[str, Any]) -> dict[str, object]:
     model_path = Path(config["model_path"]).resolve()
     artifact_path = Path(config["artifact_path"]).resolve()
     seed = config["seed"]
-    evaluation_prompts = config["evaluation_prompts"]
+    evaluation_samples = config["evaluation_samples"]
+    runtime = config["runtime"]
+    phase = config["phase"]
+    if phase not in {"baseline", "quantized"}:
+        raise RuntimeError("unknown evidence phase")
     tokenizer = AutoTokenizer.from_pretrained(
         str(model_path), local_files_only=True, trust_remote_code=False
     )
@@ -61,14 +68,14 @@ def execute(config: dict[str, Any]) -> dict[str, object]:
     benchmark_prompts = [_fixed_prompt(tokenizer, benchmark_protocol.input_tokens)]
 
     def measure(path: Path) -> tuple[list[dict[str, object]], object, dict[str, object]]:
-        engine = create_vllm_engine(path, seed=seed)
+        engine = create_vllm_engine(path, seed=seed, runtime=runtime)
         try:
             generations = run_generations(
                 engine,
                 generation_prompts,
                 GenerationProtocol(max_output_tokens=32, seed=seed),
             )
-            loss = measure_token_loss(engine, evaluation_prompts, seed=seed)
+            loss = measure_assistant_loss(engine, evaluation_samples, seed=seed).to_dict()
             sampling = SamplingParams(
                 temperature=0,
                 max_tokens=benchmark_protocol.output_tokens,
@@ -89,13 +96,16 @@ def execute(config: dict[str, Any]) -> dict[str, object]:
                 shutdown()
             gc.collect()
 
-    _, baseline_loss, baseline_performance = measure(model_path)
-    generations, quantized_loss, quantized_performance = measure(artifact_path)
-    return {
-        "generations": generations,
-        "quality": quality_comparison(baseline_loss, quantized_loss),
-        "performance": compare_benchmarks(baseline_performance, quantized_performance),
-    }
+    # Each baseline/quantized phase is a fresh process, including its vLLM
+    # workers. Sampling includes model load, generation, evaluation and shutdown.
+    with ProcessTreeResources() as resources:
+        generations, loss, performance = measure(model_path if phase == "baseline" else artifact_path)
+    from importlib.metadata import version
+    return {"schema_version": "0.2", "phase": phase, "generations": generations,
+            "quality": loss, "performance": performance, "resources": resources.record(),
+            "runtime": {"name": "vllm", "version": version("vllm"), "seed": seed,
+                        "tensor_parallel_size": 1, "trust_remote_code": False, **runtime}}
+
 
 
 def main() -> int:

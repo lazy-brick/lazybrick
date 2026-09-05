@@ -69,7 +69,11 @@ def handle(request: dict[str, Any]) -> dict[str, Any]:
             },
         )
     if operation == "execute":
-        return _response(request, result=execute_awq(payload, request["output_dir"]))
+        from lazybrick.evidence.resources import ProcessTreeResources
+        with ProcessTreeResources() as resources:
+            result = execute_awq(payload, request["output_dir"])
+        result["resources"] = resources.record()
+        return _response(request, result=result)
     if operation == "validate":
         artifact_path = payload.get("artifact_path")
         if not isinstance(artifact_path, str):

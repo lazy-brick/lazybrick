@@ -42,7 +42,7 @@ target:
   runtime: vllm
 
 evaluation:
-  protocol_id: lazybrick.ultrachat-token-loss.v1
+  protocol_id: lazybrick.ultrachat-assistant-continuation-loss.v2
   dataset:
     uri: hf-dataset://HuggingFaceH4/ultrachat_200k
     revision: 8049631c405ae6576f93f445c6b8166f76f5505a
