@@ -8,10 +8,62 @@ import subprocess
 
 import pytest
 
+from lazybrick.canonical import digest
+from lazybrick.evidence.assistant_quality import compare_assistant_quality
 from lazybrick.runs import RunIdentity, RunStore
 
 
 ROOT = Path(__file__).parents[3]
+
+
+def resource_record() -> dict[str, object]:
+    samples = [
+        {"pids": [7], "sum_rss_bytes": 10, "gpu_process_bytes": 20,
+         "vanished_processes": 0, "elapsed_ns": 0},
+        {"pids": [7], "sum_rss_bytes": 30, "gpu_process_bytes": 40,
+         "vanished_processes": 0, "elapsed_ns": 100},
+    ]
+    return {
+        "schema_version": "0.1",
+        "scope": "allocating_process_tree",
+        "method": "test",
+        "interval_ms": 100,
+        "sampled_peak_sum_rss_bytes": 30,
+        "sampled_peak_gpu_process_bytes": 40,
+        "raw_samples": samples,
+        "limitations": "sampled lower bound",
+    }
+
+
+def smoke_results() -> dict[str, object]:
+    samples = [{"prompt_token_ids": [10, 20, 21], "score_start": 1}]
+    loss = {
+        "total_negative_log_likelihood": 5.0,
+        "token_count": 2,
+        "mean_negative_log_likelihood": 2.5,
+        "perplexity": 12.182493960703473,
+        "sample_digest": digest(samples),
+        "raw_samples": [
+            {**samples[0], "selected_logprobs": ["-2.0", "-3.0"]}
+        ],
+    }
+    return {
+        "schema_version": "0.2",
+        "generations": [{"prompt": "a", "output": "b"}],
+        "quality": compare_assistant_quality(loss, loss),
+        "performance": {
+            "baseline_raw_samples": [{"latency": 1}],
+            "quantized_raw_samples": [{"latency": 1}],
+        },
+        "resources": {phase: resource_record() for phase in ("build", "baseline", "quantized")},
+        "runtime": {
+            "name": "vllm", "version": "0.28.0", "seed": 1234,
+            "tensor_parallel_size": 1, "trust_remote_code": False,
+            "dtype": "bfloat16", "max_model_len": 2048,
+            "gpu_memory_utilization": "0.85",
+        },
+        "build_time_seconds": "1.25",
+    }
 
 
 def load_script(name: str) -> object:
@@ -85,17 +137,7 @@ def test_bundle_verifier_requires_success_and_raw_evidence(tmp_path: Path) -> No
         },
     )
     bundle.write_json("provenance.json", {"python": "test"})
-    bundle.write_json(
-        "results.json",
-        {
-            "generations": [{"prompt": "a", "output": "b"}],
-            "quality": {"baseline": {"score": 1}, "quantized": {"score": 1}},
-            "performance": {
-                "baseline_raw_samples": [{"latency": 1}],
-                "quantized_raw_samples": [{"latency": 1}],
-            },
-        },
-    )
+    bundle.write_json("results.json", smoke_results())
     bundle.write_json("state-history.json", {"state": "SUCCEEDED"})
     (bundle.artifact_dir / "model.safetensors").write_bytes(b"weights")
     bundle.finalize_success({"format": "compressed-tensors/safetensors"})
@@ -103,6 +145,32 @@ def test_bundle_verifier_requires_success_and_raw_evidence(tmp_path: Path) -> No
     verified = module.verify(tmp_path)
 
     assert verified.name == identity.attempt_id
+
+
+def test_bundle_verifier_rejects_missing_resource_phase(tmp_path: Path) -> None:
+    module = load_script("verify_bundle")
+    store = RunStore(tmp_path)
+    identity = RunIdentity.create(
+        recipe_digest="a" * 64, plan_digest="b" * 64, artifact_id="c" * 64
+    )
+    bundle = store.begin(identity)
+    bundle.write_text("recipe.yaml", "schema_version: '0.1'\n")
+    bundle.write_json("resolved_recipe.json", {"resolved": True})
+    bundle.write_json(
+        "plan.json",
+        {"accepted": True, "recipe_digest": identity.recipe_digest,
+         "plan_digest": identity.plan_digest, "artifact_id": identity.artifact_id},
+    )
+    bundle.write_json("provenance.json", {"python": "test"})
+    results = smoke_results()
+    results["resources"].pop("build")
+    bundle.write_json("results.json", results)
+    bundle.write_json("state-history.json", {"state": "SUCCEEDED"})
+    (bundle.artifact_dir / "model.safetensors").write_bytes(b"weights")
+    bundle.finalize_success({"format": "compressed-tensors/safetensors"})
+
+    with pytest.raises(RuntimeError, match="resource phases are incomplete"):
+        module.verify(tmp_path)
 
 
 def test_verifier_rejects_failed_attempt(tmp_path: Path) -> None:
